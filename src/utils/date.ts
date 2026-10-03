@@ -108,18 +108,26 @@ function activeDateLocale(): Locale {
   return useI18n.getState().language === 'fa' ? faIR : enUS
 }
 
-/** `95` → `"1h 35m"` (`"1س 35د"` in Persian). Compact, used in dense tables. */
-export function formatDuration(minutes: number | null | undefined): string {
+/**
+ * Human duration. Long form is the default (`6 hours and 25 minutes` /
+ * `۶ ساعت و ۲۵ دقیقه`) so mixed digits don't scramble in RTL. Pass
+ * `{ compact: true }` for dense badges (`1h 35m` / `1س 35د`).
+ */
+export function formatDuration(
+  minutes: number | null | undefined,
+  options?: { compact?: boolean },
+): string {
   if (minutes == null || !Number.isFinite(minutes)) return '—'
   const total = Math.round(minutes)
-  if (total === 0) return t('durZero')
+  const compact = options?.compact === true
+  if (total === 0) return t(compact ? 'durZeroShort' : 'durZero')
   const sign = total < 0 ? '-' : ''
   const abs = Math.abs(total)
   const h = Math.floor(abs / 60)
   const m = abs % 60
-  if (h === 0) return sign + t('durM', { m })
-  if (m === 0) return sign + t('durH', { h })
-  return sign + t('durHm', { h, m })
+  if (h === 0) return sign + t(compact ? 'durMShort' : 'durM', { m })
+  if (m === 0) return sign + t(compact ? 'durHShort' : 'durH', { h })
+  return sign + t(compact ? 'durHmShort' : 'durHm', { h, m })
 }
 
 /** `540` → `"09:00"`. Minutes-from-midnight to a 24h clock label. */

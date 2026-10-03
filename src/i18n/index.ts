@@ -77,7 +77,8 @@ function interpolate(text: string, vars?: Vars): string {
   if (!vars) return text
   let out = text
   for (const [key, value] of Object.entries(vars)) {
-    out = out.replaceAll(`{${key}}`, String(value))
+    // Isolate each substitution so English titles/numbers don't scramble RTL text.
+    out = out.replaceAll(`{${key}}`, `\u2068${String(value)}\u2069`)
   }
   return out
 }

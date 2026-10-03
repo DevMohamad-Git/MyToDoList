@@ -132,8 +132,8 @@ export function DashboardPage() {
       />
 
       {/* ------------------------------------------------------------ score -- */}
-      <div className="mb-4 grid gap-4 lg:grid-cols-[auto_1fr]">
-        <Card className="flex items-center gap-5 p-5">
+      <div className="mb-4 grid min-w-0 gap-4 lg:grid-cols-[minmax(0,auto)_minmax(0,1fr)]">
+        <Card className="flex min-w-0 items-start gap-5 p-5 sm:items-center">
           <ScoreRing
             score={summary.today.score.score}
             rating={summary.today.rating}
@@ -162,7 +162,7 @@ export function DashboardPage() {
                 ) : yesterdayDelta < 0 ? (
                   <TrendingDown className="size-3.5" />
                 ) : null}
-                <span dir="ltr">
+                <span>
                   {t('dashVsYesterday', {
                     n: `${yesterdayDelta > 0 ? '+' : ''}${yesterdayDelta}`,
                   })}
@@ -181,7 +181,7 @@ export function DashboardPage() {
         </Card>
 
         <Card className="p-5">
-          <div className="mb-3 flex items-baseline justify-between gap-3">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
             <h2 className="text-sm font-semibold">{t('dashScoreComponents')}</h2>
             <Link
               to="/analytics"
@@ -193,20 +193,23 @@ export function DashboardPage() {
                 : trend.direction === 'down'
                   ? t('trendDeclining')
                   : t('trendFlat')}
-              <ArrowRight className="size-3" />
+              <ArrowRight className="size-3 rtl:rotate-180" />
             </Link>
           </div>
 
           <div className="grid gap-2.5 sm:grid-cols-2">
             {summary.today.score.components.map((component) => (
-              <div key={component.key} title={component.explanation}>
+              <div key={component.key} className="min-w-0" title={component.explanation}>
                 <div className="flex items-baseline justify-between gap-2 text-xs">
-                  <span className="truncate text-muted-foreground">
+                  <span className="min-w-0 truncate text-muted-foreground">
                     {t(COMPONENT_KEY[component.key] ?? 'compTaskCompletion')}
                   </span>
-                  <span className="shrink-0 font-medium tabular-nums">
-                    <span dir="ltr">{component.value == null ? '—' : Math.round(component.value)}</span>
-                    <span dir="ltr" className="ms-1 text-[10px] font-normal text-muted-foreground/70">
+                  <span
+                    className="inline-flex shrink-0 items-baseline gap-1.5 font-medium tabular-nums"
+                    dir="ltr"
+                  >
+                    <span>{component.value == null ? '—' : Math.round(component.value)}</span>
+                    <span className="text-[10px] font-normal text-muted-foreground/70">
                       {component.value == null ? t('dashNa') : `${component.effectiveWeight}%`}
                     </span>
                   </span>
@@ -224,7 +227,7 @@ export function DashboardPage() {
       </div>
 
       {/* ------------------------------------------------------------ tiles -- */}
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <StatTile
           label={t('dashOpenTasks')}
           value={summary.taskTotals.open}
@@ -320,21 +323,23 @@ export function DashboardPage() {
           ) : (
             <div className="divide-y divide-border">
               {recommendations.map((rec) => (
-                <div key={rec.id} className="p-3.5">
-                  <h3 className={cn('text-sm font-medium', SEVERITY_TEXT[rec.severity])}>
+                <div key={rec.id} className="min-w-0 overflow-hidden p-3.5">
+                  <h3 className={cn('break-words text-sm font-medium', SEVERITY_TEXT[rec.severity])}>
                     {rec.title}
                   </h3>
-                  <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                  <p className="mt-0.5 text-xs leading-relaxed break-words text-muted-foreground">
                     {rec.detail}
                   </p>
-                  <p className="mt-1 text-[11px] text-muted-foreground/70">{rec.evidence}</p>
+                  <p className="mt-1 text-[11px] leading-relaxed break-words text-muted-foreground/70">
+                    {rec.evidence}
+                  </p>
                   {rec.action ? (
                     <Link
                       to={rec.action.to}
                       className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
                     >
                       {rec.action.label}
-                      <ArrowRight className="size-3" />
+                      <ArrowRight className="size-3 rtl:rotate-180" />
                     </Link>
                   ) : null}
                 </div>

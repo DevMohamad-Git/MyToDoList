@@ -103,11 +103,15 @@ export const en = {
   dInDays: 'in {n}d',
 
   /* ------------------------------------------------------------- durations -- */
-  durHm: '{h}h {m}m',
-  durH: '{h}h',
-  durM: '{m}m',
-  durZero: '0m',
-  unitMinutes: 'm',
+  durHm: '{h} hours and {m} minutes',
+  durH: '{h} hours',
+  durM: '{m} minutes',
+  durZero: '0 minutes',
+  durHmShort: '{h}h {m}m',
+  durHShort: '{h}h',
+  durMShort: '{m}m',
+  durZeroShort: '0m',
+  unitMinutes: 'min',
 
   /* ------------------------------------------------------------- dashboard -- */
   dashTitle: 'Dashboard',
@@ -286,6 +290,22 @@ export const en = {
   recMissingReviewDetail:
     'A two-minute review is what turns tracked data into a decision about today.',
   recReviewYesterday: 'Review yesterday',
+  evOverdue: '{n} open task(s) with a due date before {when}.',
+  evOverbooked: '{n} scheduled block(s) totalling {sched}; configured capacity {cap}.',
+  evConflicts: 'Overlapping intervals among today\'s {n} scheduled block(s).',
+  evDueSoon: 'Tasks due within 72 hours with no start time: {titles}.',
+  evDueSoonMore: '{titles} and {n} more',
+  evBias: 'Mean actual/estimated ratio {ratio} across {n} completed task(s).',
+  evDeclining: 'Slope {slope} points/day across {n} scored day(s); 14-day mean {score}.',
+  evImproving: 'Slope +{slope} points/day; {n} of 14 days active.',
+  evLowConsistency: '{n} day(s) with a completed task or logged time in the last 14.',
+  evFocusGap: 'Focus over the last 7 days: {logged} vs target {target}.',
+  evProjectRisk: '{done}/{total} tasks complete, {overdue} overdue, {rem} estimated remaining.',
+  evGoalUnlinked: 'No linked projects or tasks recorded for this goal.',
+  evGoalNeglected: '{done}/{total} linked tasks complete; {mdone}/{mtotal} milestones done.',
+  evLoad: 'Today\'s workload: {n} item(s), {work} estimated.',
+  evBlocked: '{n} task(s) with status “blocked”.',
+  evMissingReview: '{n} task(s) in yesterday\'s workload, no daily review record.',
 
   /* ------------------------------------------------------------- settings -- */
   setTitle: 'Settings',

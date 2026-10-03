@@ -103,11 +103,15 @@ export const fa: Dictionary = {
   dInDays: '{n} روز دیگر',
 
   /* ------------------------------------------------------------- durations -- */
-  durHm: '{h}س {m}د',
-  durH: '{h}س',
-  durM: '{m}د',
-  durZero: '۰د',
-  unitMinutes: 'د',
+  durHm: '{h} ساعت و {m} دقیقه',
+  durH: '{h} ساعت',
+  durM: '{m} دقیقه',
+  durZero: '۰ دقیقه',
+  durHmShort: '{h}س {m}د',
+  durHShort: '{h}س',
+  durMShort: '{m}د',
+  durZeroShort: '۰د',
+  unitMinutes: 'دقیقه',
 
   /* ------------------------------------------------------------- dashboard -- */
   dashTitle: 'داشبورد',
@@ -285,6 +289,22 @@ export const fa: Dictionary = {
   recMissingReviewDetail:
     'یک مرور دو دقیقه‌ای همان چیزی است که داده‌های ثبت‌شده را به تصمیمی برای امروز تبدیل می‌کند.',
   recReviewYesterday: 'مرور دیروز',
+  evOverdue: '{n} کار باز با مهلت قبل از {when}.',
+  evOverbooked: '{n} بلوک زمان‌بندی‌شده جمعاً {sched}؛ ظرفیت تنظیم‌شده {cap}.',
+  evConflicts: 'تداخل بازه بین {n} بلوک زمان‌بندی‌شدهٔ امروز.',
+  evDueSoon: 'کارهای با مهلت تا ۷۲ ساعت آینده بدون زمان شروع: {titles}.',
+  evDueSoonMore: '{titles} و {n} مورد دیگر',
+  evBias: 'میانگین نسبت واقعی به تخمینی {ratio} در {n} کار انجام‌شده.',
+  evDeclining: 'شیب {slope} امتیاز در روز روی {n} روز امتیازدهی‌شده؛ میانگین ۱۴ روز {score}.',
+  evImproving: 'شیب +{slope} امتیاز در روز؛ {n} روز از ۱۴ روز فعال.',
+  evLowConsistency: '{n} روز با کار انجام‌شده یا زمان ثبت‌شده در ۱۴ روز گذشته.',
+  evFocusGap: 'تمرکز ۷ روز گذشته: {logged} در برابر هدف {target}.',
+  evProjectRisk: '{done} از {total} کار کامل، {overdue} عقب‌افتاده، {rem} تخمین باقی‌مانده.',
+  evGoalUnlinked: 'هیچ پروژه یا کار پیوندخورده‌ای برای این هدف ثبت نشده.',
+  evGoalNeglected: '{done} از {total} کار پیوندخورده کامل؛ {mdone} از {mtotal} نقطهٔ عطف انجام شده.',
+  evLoad: 'بار کاری امروز: {n} مورد، تخمین {work}.',
+  evBlocked: '{n} کار با وضعیت «مسدود».',
+  evMissingReview: '{n} کار در بار کاری دیروز، بدون رکورد مرور روزانه.',
 
   /* ------------------------------------------------------------- settings -- */
   setTitle: 'تنظیمات',

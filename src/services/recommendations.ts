@@ -1,6 +1,6 @@
 import { subDays } from 'date-fns'
 import { CLOSED_TASK_STATUSES } from '@/config/constants'
-import { t } from '@/i18n'
+import { intlLocale, t } from '@/i18n'
 import {
   buildDayPlan,
   effectiveDuration,
@@ -68,7 +68,10 @@ export function buildRecommendations(
         overdue.length === 1
           ? t('recOverdueDetail1', { title: oldest.title, n: daysLate })
           : t('recOverdueDetailN', { title: oldest.title, n: daysLate }),
-      evidence: `${overdue.length} open task(s) with a due date before ${now.toLocaleString()}.`,
+      evidence: t('evOverdue', {
+        n: overdue.length,
+        when: now.toLocaleString(intlLocale()),
+      }),
       action: { label: t('recReviewOverdue'), to: '/tasks?filter=overdue' },
     })
   }
@@ -87,7 +90,11 @@ export function buildRecommendations(
         sched: formatDuration(plan.scheduledMinutes),
         cap: formatDuration(plan.capacityMinutes),
       }),
-      evidence: `${plan.blocks.length} scheduled block(s) totalling ${plan.scheduledMinutes}m; configured capacity ${plan.capacityMinutes}m.`,
+      evidence: t('evOverbooked', {
+        n: plan.blocks.length,
+        sched: formatDuration(plan.scheduledMinutes),
+        cap: formatDuration(plan.capacityMinutes),
+      }),
       action: { label: t('recOpenPlanner'), to: '/planner' },
     })
   }
@@ -100,7 +107,7 @@ export function buildRecommendations(
           ? t('recConflictsTitle1')
           : t('recConflictsTitleN', { n: plan.conflictCount }),
       detail: t('recConflictsDetail'),
-      evidence: `Overlapping intervals detected among today's ${plan.blocks.length} scheduled block(s).`,
+      evidence: t('evConflicts', { n: plan.blocks.length }),
       action: { label: t('recResolveConflicts'), to: '/planner' },
     })
   }
@@ -122,10 +129,18 @@ export function buildRecommendations(
           ? t('recDueSoonTitle1')
           : t('recDueSoonTitleN', { n: dueSoonUnscheduled.length }),
       detail: t('recDueSoonDetail'),
-      evidence: `Tasks with a due date inside 72h and no startDate: ${dueSoonUnscheduled
-        .slice(0, 3)
-        .map((task) => `“${task.title}”`)
-        .join(', ')}${dueSoonUnscheduled.length > 3 ? ` and ${dueSoonUnscheduled.length - 3} more` : ''}.`,
+      evidence: t('evDueSoon', {
+        titles:
+          dueSoonUnscheduled.length > 3
+            ? t('evDueSoonMore', {
+                titles: dueSoonUnscheduled
+                  .slice(0, 3)
+                  .map((task) => `«${task.title}»`)
+                  .join(', '),
+                n: dueSoonUnscheduled.length - 3,
+              })
+            : dueSoonUnscheduled.map((task) => `«${task.title}»`).join(', '),
+      }),
       action: { label: t('recPlanThem'), to: '/planner' },
     })
   }
@@ -144,7 +159,7 @@ export function buildRecommendations(
       detail: over
         ? t('recBiasUnderDetail', { n: worst.biasPercent })
         : t('recBiasOverDetail', { n: Math.abs(worst.biasPercent) }),
-      evidence: `Mean actual/estimated ratio ${worst.meanRatio} across ${worst.samples} completed task(s) with both values recorded.`,
+      evidence: t('evBias', { ratio: worst.meanRatio, n: worst.samples }),
       action: { label: t('recSeeAnalytics'), to: '/analytics' },
     })
   }
@@ -160,7 +175,11 @@ export function buildRecommendations(
       severity: 'warning',
       title: t('recDecliningTitle'),
       detail: t('recDecliningDetail'),
-      evidence: `Linear slope ${trend.slope} points/day across ${range.days.filter((d) => !d.noData).length} scored day(s); 14-day mean ${range.score}.`,
+      evidence: t('evDeclining', {
+        slope: trend.slope,
+        n: range.days.filter((d) => !d.noData).length,
+        score: range.score,
+      }),
       action: { label: t('recOpenAnalytics'), to: '/analytics' },
     })
   } else if (trend.direction === 'up' && range.score >= 70) {
@@ -169,7 +188,7 @@ export function buildRecommendations(
       severity: 'positive',
       title: t('recImprovingTitle'),
       detail: t('recImprovingDetail', { n: range.score }),
-      evidence: `Linear slope +${trend.slope} points/day; ${range.activeDays} of 14 days active.`,
+      evidence: t('evImproving', { slope: trend.slope, n: range.activeDays }),
     })
   }
 
@@ -179,7 +198,7 @@ export function buildRecommendations(
       severity: 'info',
       title: t('recLowConsistencyTitle', { n: range.activeDays }),
       detail: t('recLowConsistencyDetail'),
-      evidence: `${range.activeDays} day(s) with a completed task or logged time in the last 14.`,
+      evidence: t('evLowConsistency', { n: range.activeDays }),
     })
   }
 
@@ -196,7 +215,10 @@ export function buildRecommendations(
         logged: formatDuration(weekFocus),
         target: formatDuration(weekTarget),
       }),
-      evidence: `Sum of focus session durations over the last 7 days: ${weekFocus}m vs target ${weekTarget}m.`,
+      evidence: t('evFocusGap', {
+        logged: formatDuration(weekFocus),
+        target: formatDuration(weekTarget),
+      }),
       action: { label: t('recStartSession'), to: '/focus' },
     })
   }
@@ -213,11 +235,16 @@ export function buildRecommendations(
       detail: project.deadline
         ? t('recProjectRiskDeadline', {
             p: stats.progress,
-            date: new Date(project.deadline).toLocaleDateString(),
+            date: new Date(project.deadline).toLocaleDateString(intlLocale()),
             rem: formatDuration(stats.remainingEstimateMinutes),
           })
         : t('recProjectRiskPlain', { p: stats.progress, n: stats.overdueTasks }),
-      evidence: `${stats.completedTasks}/${stats.totalTasks} tasks complete, ${stats.overdueTasks} overdue, ${stats.remainingEstimateMinutes}m estimated remaining.`,
+      evidence: t('evProjectRisk', {
+        done: stats.completedTasks,
+        total: stats.totalTasks,
+        overdue: stats.overdueTasks,
+        rem: formatDuration(stats.remainingEstimateMinutes),
+      }),
       action: { label: t('recOpenProject'), to: `/projects/${project.id}` },
     })
   }
@@ -241,7 +268,7 @@ export function buildRecommendations(
         severity: 'info',
         title: t('recGoalUnlinkedTitle', { title: goal.title }),
         detail: t('recGoalUnlinkedDetail'),
-        evidence: 'Zero linked projects and zero linked tasks recorded for this goal.',
+        evidence: t('evGoalUnlinked'),
         action: { label: t('recOpenGoal'), to: '/goals' },
       })
     } else if (!recentActivity && !stats.onTrack) {
@@ -253,7 +280,12 @@ export function buildRecommendations(
           stats.daysRemaining != null
             ? t('recGoalNeglectedDays', { p: stats.progress, n: stats.daysRemaining })
             : t('recGoalNeglected', { p: stats.progress }),
-        evidence: `${stats.completedLinkedTasks}/${stats.linkedTasks} linked tasks complete; ${stats.completedMilestones}/${stats.totalMilestones} milestones done.`,
+        evidence: t('evGoalNeglected', {
+          done: stats.completedLinkedTasks,
+          total: stats.linkedTasks,
+          mdone: stats.completedMilestones,
+          mtotal: stats.totalMilestones,
+        }),
         action: { label: t('recOpenGoal'), to: '/goals' },
       })
     }
@@ -271,7 +303,10 @@ export function buildRecommendations(
         work: formatDuration(workloadMinutes),
         cap: formatDuration(settings.planning.dailyCapacityMinutes),
       }),
-      evidence: `Today's workload = tasks scheduled for, due on, or completed today: ${workload.length} item(s), ${workloadMinutes}m estimated.`,
+      evidence: t('evLoad', {
+        n: workload.length,
+        work: formatDuration(workloadMinutes),
+      }),
       action: { label: t('recOpenPlanner'), to: '/planner' },
     })
   }
@@ -284,7 +319,7 @@ export function buildRecommendations(
       severity: 'info',
       title: t('recBlockedTitle', { n: blocked.length }),
       detail: t('recBlockedDetail'),
-      evidence: `${blocked.length} task(s) with status “blocked”.`,
+      evidence: t('evBlocked', { n: blocked.length }),
       action: { label: t('recViewBlocked'), to: '/tasks?status=blocked' },
     })
   }
@@ -299,7 +334,7 @@ export function buildRecommendations(
       severity: 'info',
       title: t('recMissingReviewTitle'),
       detail: t('recMissingReviewDetail'),
-      evidence: `${dayWorkload(snapshot, yesterday).length} task(s) in yesterday's workload, no daily review record.`,
+      evidence: t('evMissingReview', { n: dayWorkload(snapshot, yesterday).length }),
       action: { label: t('recReviewYesterday'), to: '/reviews' },
     })
   }

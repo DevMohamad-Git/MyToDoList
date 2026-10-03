@@ -25,12 +25,12 @@ export function CardHeader({
 }) {
   return (
     <div className={cn('flex items-start justify-between gap-3 border-b border-border p-4', className)}>
-      <div className="flex min-w-0 items-start gap-2.5">
-        {icon ? <span className="mt-0.5 text-muted-foreground">{icon}</span> : null}
+      <div className="flex min-w-0 flex-1 items-start gap-2.5">
+        {icon ? <span className="mt-0.5 shrink-0 text-muted-foreground">{icon}</span> : null}
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold">{title}</h2>
+          <h2 className="text-sm font-semibold">{title}</h2>
           {description ? (
-            <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{description}</p>
           ) : null}
         </div>
       </div>
@@ -68,13 +68,17 @@ export function StatTile({
   }[tone]
 
   return (
-    <Card className={cn('p-4', className)}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-xs font-medium text-muted-foreground">{label}</span>
+    <Card className={cn('min-w-0 overflow-hidden p-4', className)}>
+      <div className="flex items-start justify-between gap-2">
+        <span className="min-w-0 text-xs font-medium leading-snug text-muted-foreground">
+          {label}
+        </span>
         {icon ? <span className="shrink-0 text-muted-foreground">{icon}</span> : null}
       </div>
-      <div className={cn('mt-2 text-2xl font-semibold tabular-nums', toneClass)}>{value}</div>
-      {hint ? <div className="mt-1 text-xs text-muted-foreground">{hint}</div> : null}
+      <div className={cn('mt-2 break-words text-xl font-semibold leading-tight sm:text-2xl', toneClass)}>
+        {value}
+      </div>
+      {hint ? <div className="mt-1 text-xs leading-snug text-muted-foreground">{hint}</div> : null}
     </Card>
   )
 }

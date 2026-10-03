@@ -149,6 +149,7 @@ export function TaskRow({
             type="button"
             disabled={!onOpen}
             onClick={() => onOpen?.(task)}
+            dir="auto"
             className={cn(
               'min-w-0 truncate text-start text-sm',
               closed && 'text-muted-foreground line-through',
@@ -187,13 +188,15 @@ export function TaskRow({
           {task.estimatedDuration ? (
             <Badge title={t('taskEstDuration')}>
               <Timer className="size-3" />
-              {formatDuration(task.estimatedDuration)}
-              {task.actualDuration > 0 ? ` / ${formatDuration(task.actualDuration)}` : ''}
+              {formatDuration(task.estimatedDuration, { compact: true })}
+              {task.actualDuration > 0
+                ? ` / ${formatDuration(task.actualDuration, { compact: true })}`
+                : ''}
             </Badge>
           ) : task.actualDuration > 0 ? (
             <Badge title={t('taskTracked')}>
               <Timer className="size-3" />
-              {formatDuration(task.actualDuration)}
+              {formatDuration(task.actualDuration, { compact: true })}
             </Badge>
           ) : null}
 

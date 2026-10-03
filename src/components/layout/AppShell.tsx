@@ -83,8 +83,11 @@ export function AppShell() {
 
       <aside
         className={cn(
-          'fixed inset-y-0 start-0 z-40 flex w-60 shrink-0 flex-col border-e border-border bg-card transition-transform lg:static lg:translate-x-0',
-          navOpen ? 'translate-x-0' : '-translate-x-full rtl:translate-x-full',
+          'fixed inset-y-0 start-0 z-40 flex w-60 shrink-0 flex-col border-e border-border bg-card shadow-xl transition-transform lg:static lg:!translate-x-0 lg:shadow-none',
+          // Off-canvas only below `lg`. Hide-transforms are max-lg-scoped so they
+          // cannot override desktop placement (rtl: variants otherwise win and shove
+          // the rail off-screen in Persian).
+          navOpen ? 'translate-x-0' : 'max-lg:-translate-x-full max-lg:rtl:translate-x-full',
         )}
       >
         <div className="flex items-center justify-between gap-2 px-3 py-3">
@@ -140,6 +143,7 @@ export function AppShell() {
             variant="ghost"
             size="icon-sm"
             aria-label={t('shellOpenNav')}
+            className="shrink-0"
             onClick={() => setNavOpen(true)}
           >
             <MenuIcon className="size-4" />
