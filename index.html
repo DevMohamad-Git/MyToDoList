@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b0d10" />
+    <meta
+      name="description"
+      content="Momentum OS — a local-first personal productivity operating system. Plan, execute, track, review, score, improve."
+    />
+    <title>Momentum OS</title>
+    <script>
+      // Apply the persisted theme before first paint to avoid a flash of the wrong theme.
+      try {
+        var raw = localStorage.getItem('momentum.appearance')
+        var pref = raw ? JSON.parse(raw) : null
+        var mode = (pref && pref.theme) || 'system'
+        var dark =
+          mode === 'dark' ||
+          (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        document.documentElement.classList.toggle('dark', dark)
+        if (pref && pref.accent) document.documentElement.dataset.accent = pref.accent
+        if (pref && pref.density) document.documentElement.dataset.density = pref.density
+      } catch (e) {
+        /* storage unavailable — fall back to the default dark class on <html> */
+      }
+      try {
+        // Same for the UI language: set lang/dir before first paint so an RTL
+        // user never sees an LTR flash. Mirrors `momentum.language` in src/i18n.
+        // Default is Persian (fa) when nothing is stored yet.
+        var langRaw = localStorage.getItem('momentum.language')
+        var lang = 'fa'
+        if (langRaw) {
+          var stored = JSON.parse(langRaw).state.language
+          if (stored === 'en' || stored === 'fa') lang = stored
+        }
+        document.documentElement.lang = lang
+        document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr'
+      } catch (e) {
+        /* unparsable — Persian RTL is the default */
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // Opening index.html from disk (double-click) silently fails: Chrome
+      // blocks ES modules and IndexedDB on file:// leaving a blank page. Show
+      // why it is blank and what to do instead.
+      if (location.protocol === 'file:') {
+        document.getElementById('root').innerHTML =
+          '<div dir="rtl" style="font-family:system-ui,sans-serif;max-width:34rem;margin:20vh auto 0;padding:1.5rem;color:#e6ebf2;background:#141922;border:1px solid #2a3140;border-radius:12px">' +
+          '<h1 style="font-size:1rem;margin:0 0 .5rem">برنامه با دابل‌کلیک اجرا نمی‌شود — باید با سرور اجرا شود</h1>' +
+          '<p style="margin:0 0 .75rem;font-size:.875rem;line-height:1.8;color:#9aa4b2">وقتی فایل را مستقیم از دیسک باز کنی، کروم به‌دلایل امنیتی اجازه نمی‌دهد ماژول‌ها و دیتابیس محلی اجرا شوند و صفحه خالی می‌ماند. راه درست: روی <b>Momentum.bat</b> (در پوشهٔ برنامه یا روی دسکتاپ) دابل‌کلیک کن، یا در پوشهٔ پروژه دستور <code dir="ltr" style="background:#0b0d10;padding:2px 6px;border-radius:4px">npm start</code> را بزن و آدرس <b dir="ltr">http://localhost:5173</b> را باز کن.</p>' +
+          '<p dir="ltr" style="margin:0;font-size:.75rem;line-height:1.5;color:#6b7480">English: open Momentum.bat (project folder or Desktop) or run "npm start" from the project folder, then visit http://localhost:5173.</p>' +
+          '</div>'
+        throw new Error('Momentum OS must be served over http:// — see the message above.')
+      }
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

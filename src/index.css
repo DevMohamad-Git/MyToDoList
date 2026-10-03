@@ -1,0 +1,167 @@
+@import 'tailwindcss';
+
+/**
+ * Design tokens.
+ *
+ * Every colour the app uses is a semantic token (`--color-muted`, `--color-border`,
+ * …) rather than a raw palette value, because the same class names must resolve in
+ * both themes — `src/config/constants.ts` already ships class strings like
+ * `text-muted-foreground bg-muted/60 border-border` and they cannot know the theme.
+ *
+ * The accent hue is a runtime variable set from `data-accent` on <html> so the
+ * accent picker in Settings needs no stylesheet rebuild.
+ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-background: hsl(0 0% 100%);
+  --color-foreground: hsl(222 47% 11%);
+
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(222 47% 11%);
+
+  --color-popover: hsl(0 0% 100%);
+  --color-popover-foreground: hsl(222 47% 11%);
+
+  --color-muted: hsl(210 40% 96%);
+  --color-muted-foreground: hsl(215 16% 47%);
+
+  --color-accent: hsl(var(--accent-hue));
+  --color-accent-foreground: hsl(0 0% 100%);
+
+  --color-border: hsl(214 32% 91%);
+  --color-input: hsl(214 32% 91%);
+  --color-ring: hsl(var(--accent-hue));
+
+  --color-elevated: hsl(210 40% 98%);
+
+  --radius-card: 0.75rem;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+:root {
+  /* Default accent; overridden by `data-accent` below. */
+  --accent-hue: 243 75% 59%;
+  --density-row: 2.5rem;
+  --density-gap: 1rem;
+}
+
+.dark {
+  --color-background: hsl(222 30% 6%);
+  --color-foreground: hsl(210 40% 96%);
+
+  --color-card: hsl(222 26% 9%);
+  --color-card-foreground: hsl(210 40% 96%);
+
+  --color-popover: hsl(222 26% 11%);
+  --color-popover-foreground: hsl(210 40% 96%);
+
+  --color-muted: hsl(217 27% 15%);
+  --color-muted-foreground: hsl(215 20% 62%);
+
+  --color-border: hsl(217 25% 19%);
+  --color-input: hsl(217 25% 19%);
+
+  --color-elevated: hsl(222 26% 12%);
+}
+
+/* -------------------------------------------------------------- accents -- */
+/* Keys mirror ACCENT_COLORS in src/config/constants.ts. */
+[data-accent='indigo'] { --accent-hue: 243 75% 59%; }
+[data-accent='violet'] { --accent-hue: 262 83% 58%; }
+[data-accent='blue']   { --accent-hue: 217 91% 60%; }
+[data-accent='teal']   { --accent-hue: 173 80% 40%; }
+[data-accent='emerald']{ --accent-hue: 160 84% 39%; }
+[data-accent='amber']  { --accent-hue: 38 92% 50%; }
+[data-accent='rose']   { --accent-hue: 347 77% 50%; }
+
+/* -------------------------------------------------------------- density -- */
+[data-density='compact']     { --density-row: 2rem;    --density-gap: 0.625rem; }
+[data-density='comfortable'] { --density-row: 2.5rem;  --density-gap: 1rem; }
+[data-density='spacious']    { --density-row: 3rem;    --density-gap: 1.375rem; }
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Keyboard focus only — pointer clicks should not paint a ring. */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-muted-foreground);
+    background-clip: content-box;
+  }
+
+  /* Make native date/time pickers legible on the dark canvas. */
+  .dark input[type='date']::-webkit-calendar-picker-indicator,
+  .dark input[type='datetime-local']::-webkit-calendar-picker-indicator,
+  .dark input[type='time']::-webkit-calendar-picker-indicator {
+    filter: invert(1) opacity(0.6);
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+}
+
+@layer utilities {
+  /* Respect the OS "reduce motion" setting for every animation we add. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+}
+
+/* Recharts paints an SVG focus outline on every bar/slice click; suppress it. */
+.recharts-wrapper :focus,
+.recharts-surface:focus {
+  outline: none;
+}
