@@ -39,7 +39,7 @@
   --radius-card: 0.75rem;
 
   --font-sans:
-    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Vazirmatn', sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
@@ -48,6 +48,30 @@
   --accent-hue: 243 75% 59%;
   --density-row: 2.5rem;
   --density-gap: 1rem;
+}
+
+/* Persian typography using Vazirmatn */
+html[lang='fa'],
+html[dir='rtl'],
+:lang(fa),
+[dir='rtl'] {
+  --font-sans: 'Vazirmatn', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: var(--font-sans);
+}
+
+[dir='rtl'] {
+  letter-spacing: normal;
+}
+
+[dir='rtl'] input,
+[dir='rtl'] textarea,
+[dir='rtl'] select,
+[dir='rtl'] button,
+html[lang='fa'] input,
+html[lang='fa'] textarea,
+html[lang='fa'] select,
+html[lang='fa'] button {
+  font-family: inherit;
 }
 
 .dark {

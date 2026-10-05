@@ -30,6 +30,7 @@ import {
   CardBody,
   CardHeader,
   EmptyState,
+  JalaliDatePicker,
   Modal,
   PageHeader,
   ProgressBar,
@@ -43,10 +44,12 @@ import { useSettings, useWorkspaceId } from '@/stores/workspace'
 import type { Task } from '@/types'
 import { cn } from '@/utils/cn'
 import {
+  addDays,
   dayRange,
   formatDayLabel,
   formatDuration,
   formatMinutesOfDay,
+  fromDayKey,
   toDayKey,
   toISO,
 } from '@/utils/date'
@@ -128,9 +131,7 @@ export function PlannerPage() {
   )
 
   function shiftDay(delta: number) {
-    const d = new Date(day)
-    d.setDate(d.getDate() + delta)
-    setDay(toDayKey(d))
+    setDay(toDayKey(addDays(fromDayKey(day), delta)))
   }
 
   function runAutoPlan() {
@@ -234,11 +235,10 @@ export function PlannerPage() {
           <Button variant="outline" size="icon" aria-label="Previous day" onClick={() => shiftDay(-1)}>
             <ArrowLeft className="size-4" />
           </Button>
-          <input
-            type="date"
+          <JalaliDatePicker
             value={day}
-            onChange={(e) => e.target.value && setDay(e.target.value)}
-            className="h-9 rounded-lg border border-input bg-background px-3 text-sm focus:border-accent focus:outline-none"
+            onChange={(v) => v && setDay(v)}
+            className="w-44"
           />
           <Button variant="outline" size="icon" aria-label="Next day" onClick={() => shiftDay(1)}>
             <ArrowRight className="size-4" />

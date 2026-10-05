@@ -11,6 +11,7 @@ import {
   Field,
   IconButton,
   Input,
+  JalaliDatePicker,
   LoadingState,
   Menu,
   Modal,
@@ -409,7 +410,7 @@ function CreateGoalModal({
             />
           </Field>
           <Field label="Deadline">
-            <Input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+            <JalaliDatePicker value={deadline} onChange={(v) => setDeadline(v)} />
           </Field>
         </div>
         <Field label="Linked projects" hint="Their progress feeds this goal's percentage.">

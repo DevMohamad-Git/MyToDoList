@@ -8,6 +8,7 @@ import {
   CardBody,
   CardHeader,
   Field,
+  JalaliDatePicker,
   LoadingState,
   PageHeader,
   ScoreLabel,
@@ -106,12 +107,11 @@ function DayNav({ day, setDay }: { day: DayKey; setDay: (d: DayKey) => void }) {
       <Button variant="outline" size="icon" aria-label="Previous day" onClick={() => shift(-1)}>
         <ArrowLeft className="size-4" />
       </Button>
-      <input
-        type="date"
+      <JalaliDatePicker
         value={day}
         max={toDayKey(new Date())}
-        onChange={(e) => e.target.value && setDay(e.target.value)}
-        className="h-9 rounded-lg border border-input bg-background px-3 text-sm focus:border-accent focus:outline-none"
+        onChange={(v) => v && setDay(v)}
+        className="w-44"
       />
       <Button variant="outline" size="icon" aria-label="Next day" onClick={() => shift(1)}>
         <ArrowRight className="size-4" />

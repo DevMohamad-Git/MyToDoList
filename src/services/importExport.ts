@@ -52,7 +52,7 @@ import { newId } from '@/utils/id'
  * collide with or overwrite existing records.
  */
 
-export const EXPORT_FORMAT = 'momentum-os.workspace'
+export const EXPORT_FORMAT = 'flow-os.workspace'
 export const EXPORT_VERSION = 1
 
 export interface ExportBundle {
@@ -175,7 +175,7 @@ export async function exportWorkspace(
     version: EXPORT_VERSION,
     schemaVersion: SCHEMA_VERSION,
     exportedAt: nowISO(),
-    appName: 'Momentum OS',
+    appName: 'FlowOS',
     workspace,
     projects,
     tasks,
@@ -260,14 +260,14 @@ export function validateBundle(raw: unknown): ValidationResult {
     }
   }
 
-  if (raw.format !== EXPORT_FORMAT) {
-    error('$.format', `Expected format “${EXPORT_FORMAT}” but found “${String(raw.format ?? 'nothing')}”. This does not look like a Momentum OS export.`)
+  if (raw.format !== EXPORT_FORMAT && raw.format !== 'momentum-os.workspace') {
+    error('$.format', `Expected format “${EXPORT_FORMAT}” but found “${String(raw.format ?? 'nothing')}”. This does not look like a FlowOS export.`)
   }
   const version = typeof raw.version === 'number' ? raw.version : null
   if (version === null) {
     error('$.version', 'Missing export version.')
   } else if (version > EXPORT_VERSION) {
-    error('$.version', `Export version ${version} is newer than this app supports (${EXPORT_VERSION}). Update Momentum OS first.`)
+    error('$.version', `Export version ${version} is newer than this app supports (${EXPORT_VERSION}). Update FlowOS first.`)
   }
 
   if (!isRecord(raw.workspace)) {
@@ -345,7 +345,7 @@ export function validateBundle(raw: unknown): ValidationResult {
     version: version ?? EXPORT_VERSION,
     schemaVersion: typeof raw.schemaVersion === 'number' ? raw.schemaVersion : SCHEMA_VERSION,
     exportedAt: typeof raw.exportedAt === 'string' ? raw.exportedAt : nowISO(),
-    appName: typeof raw.appName === 'string' ? raw.appName : 'Momentum OS',
+    appName: typeof raw.appName === 'string' ? raw.appName : 'FlowOS',
     workspace: workspaceRaw as unknown as Workspace,
     projects: projects.filter(isRecord) as unknown as Project[],
     tasks: tasks.filter(isRecord) as unknown as Task[],
@@ -803,5 +803,5 @@ export function exportFilename(workspaceName: string, kind: 'export' | 'backup' 
     .replace(/(^-|-$)/g, '')
     .slice(0, 40) || 'workspace'
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
-  return `momentum-${slug}-${kind}-${stamp}.json`
+  return `flow-${slug}-${kind}-${stamp}.json`
 }

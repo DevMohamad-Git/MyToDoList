@@ -15,6 +15,7 @@ import {
   EmptyState,
   Field,
   Input,
+  JalaliDatePicker,
   LoadingState,
   Menu,
   Modal,
@@ -331,7 +332,7 @@ export function CreateProjectModal({
             </select>
           </Field>
           <Field label="Deadline">
-            <Input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+            <JalaliDatePicker value={deadline} onChange={(v) => setDeadline(v)} />
           </Field>
         </div>
         <Field label="Colour">

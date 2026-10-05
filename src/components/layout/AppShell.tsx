@@ -148,7 +148,7 @@ export function AppShell() {
           >
             <MenuIcon className="size-4" />
           </Button>
-          <span className="text-sm font-semibold">Momentum OS</span>
+          <span className="text-sm font-semibold">FlowOS</span>
           <Button
             variant="primary"
             size="icon-sm"

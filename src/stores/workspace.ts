@@ -62,7 +62,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     } catch (error) {
       set({
         phase: 'error',
-        error: (error as Error).message || 'Momentum OS could not start.',
+        error: (error as Error).message || 'FlowOS could not start.',
       })
     }
   },

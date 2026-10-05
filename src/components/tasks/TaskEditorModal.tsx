@@ -8,6 +8,8 @@ import {
   Field,
   IconButton,
   Input,
+  JalaliDatePicker,
+  JalaliDateTimePicker,
   Modal,
   OptionSelect,
   Select,
@@ -16,8 +18,8 @@ import {
   Textarea,
   toast,
 } from '@/components/ui'
-import { PRIORITY_LABEL, TASK_STATUS_LABEL } from '@/config/constants'
 import { createRecurrence } from '@/database/factories'
+import { priorityLabel, taskStatusLabel, useI18n, useT } from '@/i18n'
 import { describeRecurrence, upcomingOccurrences } from '@/services/recurrence'
 import { goalRepo } from '@/storage/goalRepo'
 import { projectRepo } from '@/storage/projectRepo'
@@ -55,23 +57,6 @@ import { newId } from '@/utils/id'
 
 type Tab = 'details' | 'schedule' | 'links' | 'time'
 
-const RECURRENCE_FREQUENCIES: { value: RecurrenceFrequency; label: string }[] = [
-  { value: 'daily', label: 'Daily' },
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'monthly', label: 'Monthly' },
-  { value: 'yearly', label: 'Yearly' },
-]
-
-const WEEKDAY_LABELS: { value: WeekDay; label: string }[] = [
-  { value: 1, label: 'Mon' },
-  { value: 2, label: 'Tue' },
-  { value: 3, label: 'Wed' },
-  { value: 4, label: 'Thu' },
-  { value: 5, label: 'Fri' },
-  { value: 6, label: 'Sat' },
-  { value: 0, label: 'Sun' },
-]
-
 export function TaskEditorModal({
   taskId,
   open,
@@ -81,6 +66,8 @@ export function TaskEditorModal({
   open: boolean
   onClose: () => void
 }) {
+  const t = useT()
+  const language = useI18n((s) => s.language)
   const workspaceId = useWorkspaceId()
   const task = useLiveQuery(() => (taskId ? taskRepo.get(taskId) : undefined), [taskId])
   const projects = useLiveQuery(() => projectRepo.list(workspaceId), [workspaceId]) ?? []
@@ -99,6 +86,40 @@ export function TaskEditorModal({
   const [draft, setDraft] = useState<Task | null>(null)
   const [busy, setBusy] = useState(false)
   const [newSubtask, setNewSubtask] = useState('')
+
+  const recurrenceFrequencies: { value: RecurrenceFrequency; label: string }[] = useMemo(
+    () => [
+      { value: 'daily', label: t('teFreqDaily') },
+      { value: 'weekly', label: t('teFreqWeekly') },
+      { value: 'monthly', label: t('teFreqMonthly') },
+      { value: 'yearly', label: t('teFreqYearly') },
+    ],
+    [t],
+  )
+
+  const weekdayLabels: { value: WeekDay; label: string }[] = useMemo(
+    () =>
+      language === 'fa'
+        ? [
+            { value: 6, label: 'ش' },
+            { value: 0, label: 'ی' },
+            { value: 1, label: 'د' },
+            { value: 2, label: 'س' },
+            { value: 3, label: 'چ' },
+            { value: 4, label: 'پ' },
+            { value: 5, label: 'ج' },
+          ]
+        : [
+            { value: 1, label: 'Mon' },
+            { value: 2, label: 'Tue' },
+            { value: 3, label: 'Wed' },
+            { value: 4, label: 'Thu' },
+            { value: 5, label: 'Fri' },
+            { value: 6, label: 'Sat' },
+            { value: 0, label: 'Sun' },
+          ],
+    [language],
+  )
 
   // Load the record into a local draft whenever the dialog targets a new task.
   useEffect(() => {
@@ -119,8 +140,8 @@ export function TaskEditorModal({
 
   if (!draft) {
     return (
-      <Modal open={open} onClose={onClose} title="Task">
-        <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
+      <Modal open={open} onClose={onClose} title={t('teTask')}>
+        <p className="py-6 text-center text-sm text-muted-foreground">{t('teLoading')}</p>
       </Modal>
     )
   }
@@ -139,7 +160,7 @@ export function TaskEditorModal({
   // null-narrowing above into nested function bodies.
   async function save(current: Task) {
     if (!current.title.trim()) {
-      toast.error('A task needs a title')
+      toast.error(t('toastNeedsTitle'))
       return
     }
     setBusy(true)
@@ -162,10 +183,10 @@ export function TaskEditorModal({
         links: current.links,
         notes: current.notes,
       })
-      toast.success('Task saved')
+      toast.success(t('toastTaskSaved'))
       onClose()
     } catch (error) {
-      toast.error((error as Error).message || 'Could not save the task')
+      toast.error((error as Error).message || t('toastTaskSaveFailed'))
     } finally {
       setBusy(false)
     }
@@ -190,16 +211,16 @@ export function TaskEditorModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={draft.title || 'Task'}
-      description={`Created ${formatDate(draft.createdAt)}`}
+      title={draft.title || t('teTask')}
+      description={t('teCreated', { date: formatDate(draft.createdAt) })}
       size="lg"
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={busy}>
-            Cancel
+            {t('cCancel')}
           </Button>
           <Button variant="primary" onClick={() => void save(draft)} disabled={busy}>
-            Save changes
+            {t('teSaveChanges')}
           </Button>
         </>
       }
@@ -209,16 +230,16 @@ export function TaskEditorModal({
         value={tab}
         onChange={setTab}
         tabs={[
-          { value: 'details', label: 'Details' },
-          { value: 'schedule', label: 'Schedule' },
-          { value: 'links', label: 'Subtasks & links', count: subtasks.length || undefined },
-          { value: 'time', label: 'Time', count: timeEntries.length || undefined },
+          { value: 'details', label: t('teTabDetails') },
+          { value: 'schedule', label: t('teTabSchedule') },
+          { value: 'links', label: t('teTabLinks'), count: subtasks.length || undefined },
+          { value: 'time', label: t('teTabTime'), count: timeEntries.length || undefined },
         ]}
       />
 
       {tab === 'details' ? (
         <div className="flex flex-col gap-3">
-          <Field label="Title" required htmlFor="te-title">
+          <Field label={t('teTitle')} required htmlFor="te-title">
             <Input
               id="te-title"
               value={draft.title}
@@ -226,56 +247,56 @@ export function TaskEditorModal({
             />
           </Field>
 
-          <Field label="Description" htmlFor="te-desc">
+          <Field label={t('teDescription')} htmlFor="te-desc">
             <Textarea
               id="te-desc"
               value={draft.description}
               onChange={(e) => patch('description', e.target.value)}
-              placeholder="What does done look like?"
+              placeholder={t('teDescPlaceholder')}
             />
           </Field>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Status" htmlFor="te-status">
+            <Field label={t('teStatus')} htmlFor="te-status">
               <OptionSelect<TaskStatus>
                 id="te-status"
                 value={draft.status}
                 onChange={(v) => patch('status', v)}
-                options={TASK_STATUSES.map((s) => ({ value: s, label: TASK_STATUS_LABEL[s] }))}
+                options={TASK_STATUSES.map((s) => ({ value: s, label: taskStatusLabel(s) }))}
               />
             </Field>
 
-            <Field label="Priority" htmlFor="te-priority">
+            <Field label={t('qaPriority')} htmlFor="te-priority">
               <OptionSelect<Priority>
                 id="te-priority"
                 value={draft.priority}
                 onChange={(v) => patch('priority', v)}
-                options={PRIORITIES.map((p) => ({ value: p, label: PRIORITY_LABEL[p] }))}
+                options={PRIORITIES.map((p) => ({ value: p, label: priorityLabel(p) }))}
               />
             </Field>
 
-            <Field label="Project" htmlFor="te-project">
+            <Field label={t('qaProject')} htmlFor="te-project">
               <OptionSelect
                 id="te-project"
                 value={draft.projectId ?? ''}
-                placeholder="No project"
+                placeholder={t('qaNoProject')}
                 onChange={(v) => patch('projectId', v || null)}
                 options={projects.map((p) => ({ value: p.id, label: p.name }))}
               />
             </Field>
 
-            <Field label="Goal" htmlFor="te-goal">
+            <Field label={t('teGoal')} htmlFor="te-goal">
               <OptionSelect
                 id="te-goal"
                 value={draft.goalId ?? ''}
-                placeholder="No goal"
+                placeholder={t('teNoGoal')}
                 onChange={(v) => patch('goalId', v || null)}
                 options={goals.map((g) => ({ value: g.id, label: g.title }))}
               />
             </Field>
           </div>
 
-          <Field label="Tags" hint="Comma separated" htmlFor="te-tags">
+          <Field label={t('teTags')} hint={t('teTagsHint')} htmlFor="te-tags">
             <Input
               id="te-tags"
               value={tagsValue}
@@ -288,12 +309,12 @@ export function TaskEditorModal({
                     .filter(Boolean),
                 )
               }
-              placeholder="deep-work, writing"
+              placeholder={t('teTagsPlaceholder')}
             />
           </Field>
 
           <Slider
-            label="Score weight"
+            label={t('teScoreWeight')}
             suffix="×"
             min={0.25}
             max={4}
@@ -302,15 +323,15 @@ export function TaskEditorModal({
             onChange={(v) => patch('scoreWeight', v)}
           />
           <p className="-mt-1 text-xs text-muted-foreground">
-            Multiplies this task's contribution to the priority-weighted score component.
+            {t('teScoreWeightDesc')}
           </p>
 
-          <Field label="Notes" htmlFor="te-notes">
+          <Field label={t('teNotes')} htmlFor="te-notes">
             <Textarea
               id="te-notes"
               value={draft.notes}
               onChange={(e) => patch('notes', e.target.value)}
-              placeholder="Working notes, links, context…"
+              placeholder={t('teNotesPlaceholder')}
             />
           </Field>
         </div>
@@ -319,25 +340,23 @@ export function TaskEditorModal({
       {tab === 'schedule' ? (
         <div className="flex flex-col gap-3">
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Scheduled start" hint="Presence of a start makes it planned" htmlFor="te-start">
-              <Input
+            <Field label={t('teScheduledStart')} hint={t('teStartHint')} htmlFor="te-start">
+              <JalaliDateTimePicker
                 id="te-start"
-                type="datetime-local"
                 value={toDateTimeInput(draft.startDate)}
-                onChange={(e) => patch('startDate', fromDateTimeInput(e.target.value))}
+                onChange={(v) => patch('startDate', fromDateTimeInput(v))}
               />
             </Field>
 
-            <Field label="Due" htmlFor="te-due">
-              <Input
+            <Field label={t('qaDue')} htmlFor="te-due">
+              <JalaliDateTimePicker
                 id="te-due"
-                type="datetime-local"
                 value={toDateTimeInput(draft.dueDate)}
-                onChange={(e) => patch('dueDate', fromDateTimeInput(e.target.value))}
+                onChange={(v) => patch('dueDate', fromDateTimeInput(v))}
               />
             </Field>
 
-            <Field label="Estimate (minutes)" htmlFor="te-est">
+            <Field label={t('qaEstimate')} htmlFor="te-est">
               <Input
                 id="te-est"
                 type="number"
@@ -349,7 +368,7 @@ export function TaskEditorModal({
               />
             </Field>
 
-            <Field label="Manual progress" hint="Leave empty to derive from subtasks" htmlFor="te-progress">
+            <Field label={t('teManualProgress')} hint={t('teProgressHint')} htmlFor="te-progress">
               <Input
                 id="te-progress"
                 type="number"
@@ -365,7 +384,7 @@ export function TaskEditorModal({
 
           <div className="rounded-lg border border-border p-3">
             <Checkbox
-              label="Repeats"
+              label={t('teRepeats')}
               checked={Boolean(draft.recurrence)}
               onChange={(e) => patch('recurrence', e.target.checked ? createRecurrence() : null)}
             />
@@ -373,14 +392,14 @@ export function TaskEditorModal({
             {draft.recurrence ? (
               <div className="mt-3 flex flex-col gap-3">
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Frequency">
+                  <Field label={t('teFrequency')}>
                     <OptionSelect<RecurrenceFrequency>
                       value={draft.recurrence.frequency}
                       onChange={(v) => patchRecurrence({ frequency: v })}
-                      options={RECURRENCE_FREQUENCIES}
+                      options={recurrenceFrequencies}
                     />
                   </Field>
-                  <Field label="Every">
+                  <Field label={t('teEvery')}>
                     <Input
                       type="number"
                       min={1}
@@ -393,9 +412,9 @@ export function TaskEditorModal({
                 </div>
 
                 {draft.recurrence.frequency === 'weekly' ? (
-                  <Field label="On days">
+                  <Field label={t('teOnDays')}>
                     <div className="flex flex-wrap gap-1">
-                      {WEEKDAY_LABELS.map((day) => {
+                      {weekdayLabels.map((day) => {
                         const active = draft.recurrence!.weekDays.includes(day.value)
                         return (
                           <Button
@@ -419,7 +438,7 @@ export function TaskEditorModal({
                 ) : null}
 
                 {draft.recurrence.frequency === 'monthly' ? (
-                  <Field label="Day of month" hint="Leave empty to use the due date's day">
+                  <Field label={t('teDayOfMonth')} hint={t('teDayOfMonthHint')}>
                     <Input
                       type="number"
                       min={1}
@@ -435,14 +454,13 @@ export function TaskEditorModal({
                 ) : null}
 
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Until">
-                    <Input
-                      type="date"
+                  <Field label={t('teUntil')}>
+                    <JalaliDatePicker
                       value={toDateInput(draft.recurrence.until)}
-                      onChange={(e) => patchRecurrence({ until: fromDateInput(e.target.value) })}
+                      onChange={(v) => patchRecurrence({ until: fromDateInput(v) })}
                     />
                   </Field>
-                  <Field label="Max occurrences">
+                  <Field label={t('teMaxOccurrences')}>
                     <Input
                       type="number"
                       min={1}
@@ -455,10 +473,12 @@ export function TaskEditorModal({
                 </div>
 
                 <p className="text-xs text-muted-foreground">
-                  {describeRecurrence(draft.recurrence)}. Next:{' '}
-                  {upcomingOccurrences(draft.recurrence, new Date(), 3)
-                    .map((d) => formatDate(d))
-                    .join(', ') || '—'}
+                  {t('teRecurrenceNext', {
+                    recurrence: describeRecurrence(draft.recurrence),
+                    next: upcomingOccurrences(draft.recurrence, new Date(), 3)
+                      .map((d) => formatDate(d))
+                      .join(', ') || '—',
+                  })}
                 </p>
               </div>
             ) : null}
@@ -469,10 +489,10 @@ export function TaskEditorModal({
       {tab === 'links' ? (
         <div className="flex flex-col gap-4">
           <div>
-            <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase">Subtasks</h3>
+            <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase">{t('teSubtasks')}</h3>
             <div className="rounded-lg border border-border">
               {subtasks.length === 0 ? (
-                <p className="px-3 py-3 text-xs text-muted-foreground">No subtasks yet.</p>
+                <p className="px-3 py-3 text-xs text-muted-foreground">{t('teNoSubtasks')}</p>
               ) : (
                 subtasks
                   .slice()
@@ -509,7 +529,7 @@ export function TaskEditorModal({
               )}
               <div className="flex items-center gap-2 border-t border-border p-2">
                 <Input
-                  placeholder="Add a subtask…"
+                  placeholder={t('teAddSubtaskPlaceholder')}
                   value={newSubtask}
                   onChange={(e) => setNewSubtask(e.target.value)}
                   onKeyDown={(e) => {
@@ -518,7 +538,7 @@ export function TaskEditorModal({
                 />
                 <Button size="sm" onClick={() => void addSubtask(draft)} disabled={!newSubtask.trim()}>
                   <Plus className="size-3.5" />
-                  Add
+                  {t('teAddSubtask')}
                 </Button>
               </div>
             </div>
@@ -526,19 +546,19 @@ export function TaskEditorModal({
 
           <div>
             <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase">
-              Depends on
+              {t('teDependsOn')}
             </h3>
             <div className="flex flex-wrap gap-1.5">
               {draft.dependencies.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  Nothing blocks this task. The auto-scheduler skips tasks with open dependencies.
+                  {t('teNoDepsHint')}
                 </p>
               ) : (
                 draft.dependencies.map((id) => {
                   const dep = siblings.find((t) => t.id === id)
                   return (
                     <Badge key={id} className="gap-1 pr-1">
-                      {dep?.title ?? 'Unknown task'}
+                      {dep?.title ?? t('teUnknownTask')}
                       <button
                         type="button"
                         aria-label="Remove dependency"
@@ -564,7 +584,7 @@ export function TaskEditorModal({
                 }
               }}
             >
-              <option value="">Add a dependency…</option>
+              <option value="">{t('teAddDependencyPlaceholder')}</option>
               {dependencyOptions
                 .filter((o) => !draft.dependencies.includes(o.value))
                 .map((option) => (
@@ -576,11 +596,11 @@ export function TaskEditorModal({
           </div>
 
           <div>
-            <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase">Links</h3>
+            <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase">{t('teLinks')}</h3>
             {draft.links.map((link, index) => (
               <div key={link.id} className="mb-1.5 flex items-center gap-2">
                 <Input
-                  placeholder="Label"
+                  placeholder={t('teLinkLabel')}
                   className="max-w-40"
                   value={link.label}
                   onChange={(e) => {
@@ -590,7 +610,7 @@ export function TaskEditorModal({
                   }}
                 />
                 <Input
-                  placeholder="https://…"
+                  placeholder={t('teLinkUrl')}
                   value={link.url}
                   onChange={(e) => {
                     const next = [...draft.links]
@@ -599,7 +619,7 @@ export function TaskEditorModal({
                   }}
                 />
                 <IconButton
-                  label="Remove link"
+                  label={t('teRemoveLink')}
                   onClick={() => patch('links', draft.links.filter((l) => l.id !== link.id))}
                 >
                   <Trash2 className="size-3.5" />
@@ -614,7 +634,7 @@ export function TaskEditorModal({
               }
             >
               <Plus className="size-3.5" />
-              Add link
+              {t('teAddLink')}
             </Button>
           </div>
         </div>
@@ -623,19 +643,23 @@ export function TaskEditorModal({
       {tab === 'time' ? (
         <div>
           <div className="mb-2 flex items-baseline justify-between">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase">Time entries</h3>
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase">{t('teTimeEntries')}</h3>
             <span className="text-xs text-muted-foreground">
-              Total {formatDuration(draft.actualDuration)}
               {draft.estimatedDuration
-                ? ` of ${formatDuration(draft.estimatedDuration)} estimated`
-                : ''}
+                ? t('teTotalOfEst', {
+                    total: formatDuration(draft.actualDuration),
+                    estimated: formatDuration(draft.estimatedDuration),
+                  })
+                : t('teTotalOnly', {
+                    total: formatDuration(draft.actualDuration),
+                  })}
             </span>
           </div>
 
           <div className="rounded-lg border border-border">
             {timeEntries.length === 0 ? (
               <p className="px-3 py-3 text-xs text-muted-foreground">
-                No time logged. Start a focus session from the task menu, or log time on the Focus page.
+                {t('teNoTimeLogged')}
               </p>
             ) : (
               timeEntries
@@ -654,10 +678,10 @@ export function TaskEditorModal({
                       {entry.note || entry.sessionType}
                     </span>
                     <IconButton
-                      label="Delete time entry"
+                      label={t('teDeleteTimeEntry')}
                       onClick={async () => {
                         await timeRepo.remove(entry.id)
-                        toast.success('Time entry removed')
+                        toast.success(t('toastTimeEntryRemoved'))
                       }}
                     >
                       <Trash2 className="size-3.5" />

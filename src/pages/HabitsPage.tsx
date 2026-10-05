@@ -20,6 +20,7 @@ import {
   Textarea,
   toast,
 } from '@/components/ui'
+import { useI18n } from '@/i18n'
 import { ENTITY_COLORS } from '@/config/constants'
 import { habitStatsMap } from '@/services/analytics'
 import { isHabitDue } from '@/services/streaks'
@@ -33,7 +34,7 @@ import {
   type WeekDay,
 } from '@/types'
 import { cn } from '@/utils/cn'
-import { addDays, formatDayLabel, fromDayKey, toDayKey } from '@/utils/date'
+import { addDays, formatDayLabel, formatDayNumber, fromDayKey, toDayKey } from '@/utils/date'
 
 /**
  * Habit tracking with a 14-day click-to-log grid.
@@ -206,7 +207,7 @@ export function HabitsPage() {
                           }}
                         >
                           <span className={count > 0 ? 'text-white drop-shadow' : 'text-muted-foreground/50'}>
-                            {count > 0 ? count : fromDayKey(day).getDate()}
+                            {count > 0 ? count : formatDayNumber(day)}
                           </span>
                         </button>
                       )
@@ -272,15 +273,27 @@ function HabitModal({ open, onClose, habit }: { open: boolean; onClose: () => vo
     setColor(habit?.color ?? ENTITY_COLORS[6])
   }
 
-  const DAY_LABELS: { value: WeekDay; label: string }[] = [
-    { value: 1, label: 'Mon' },
-    { value: 2, label: 'Tue' },
-    { value: 3, label: 'Wed' },
-    { value: 4, label: 'Thu' },
-    { value: 5, label: 'Fri' },
-    { value: 6, label: 'Sat' },
-    { value: 0, label: 'Sun' },
-  ]
+  const language = useI18n((s) => s.language)
+  const DAY_LABELS: { value: WeekDay; label: string }[] =
+    language === 'fa'
+      ? [
+          { value: 6, label: 'ش' },
+          { value: 0, label: 'ی' },
+          { value: 1, label: 'د' },
+          { value: 2, label: 'س' },
+          { value: 3, label: 'چ' },
+          { value: 4, label: 'پ' },
+          { value: 5, label: 'ج' },
+        ]
+      : [
+          { value: 1, label: 'Mon' },
+          { value: 2, label: 'Tue' },
+          { value: 3, label: 'Wed' },
+          { value: 4, label: 'Thu' },
+          { value: 5, label: 'Fri' },
+          { value: 6, label: 'Sat' },
+          { value: 0, label: 'Sun' },
+        ]
 
   async function submit() {
     if (!title.trim()) return

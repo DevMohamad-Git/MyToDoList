@@ -1,19 +1,17 @@
-import { Check, ChevronsUpDown, Plus, Sparkles } from 'lucide-react'
+import { Check, ChevronsUpDown, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Button, Input, Menu, Modal, toast } from '@/components/ui'
-import { seedDemoWorkspace } from '@/database/seed'
 import { useT } from '@/i18n'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { cn } from '@/utils/cn'
 
-/** Workspace picker in the sidebar header, plus creation and demo seeding. */
+/** Workspace picker in the sidebar header, plus workspace creation. */
 export function WorkspaceSwitcher() {
   const t = useT()
   const workspaces = useWorkspaceStore((s) => s.workspaces)
   const activeId = useWorkspaceStore((s) => s.activeId)
   const setActive = useWorkspaceStore((s) => s.setActive)
   const createWorkspace = useWorkspaceStore((s) => s.createWorkspace)
-  const refresh = useWorkspaceStore((s) => s.refresh)
 
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
@@ -30,21 +28,6 @@ export function WorkspaceSwitcher() {
       toast.success(t('wsCreated', { name: trimmed }))
       setCreating(false)
       setName('')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function seedDemo() {
-    setBusy(true)
-    try {
-      await seedDemoWorkspace()
-      await refresh()
-      const seeded = useWorkspaceStore.getState().workspaces.find((w) => w.isDemo)
-      if (seeded) await setActive(seeded.id)
-      toast.success(t('wsDemoCreated'))
-    } catch (error) {
-      toast.error((error as Error).message || t('wsDemoFailed'))
     } finally {
       setBusy(false)
     }
@@ -96,11 +79,6 @@ export function WorkspaceSwitcher() {
             icon: <Plus className="size-3.5" />,
             separated: true,
             onSelect: () => setCreating(true),
-          },
-          {
-            label: t('wsCreateDemo'),
-            icon: <Sparkles className="size-3.5" />,
-            onSelect: () => void seedDemo(),
           },
         ]}
       />

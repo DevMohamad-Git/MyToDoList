@@ -12,6 +12,10 @@ build/
 .cache/
 .turbo/
 .parcel-cache/
+.claude/
+.freebuff/
+.webcontainer/
+.gemini/
 
 # Test / coverage
 coverage/

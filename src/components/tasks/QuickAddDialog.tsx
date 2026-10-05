@@ -1,8 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Plus } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Button, Field, Input, Modal, OptionSelect, toast } from '@/components/ui'
-import { PRIORITY_LABEL } from '@/config/constants'
+import { Button, Field, Input, JalaliDateTimePicker, Modal, OptionSelect, toast } from '@/components/ui'
+import { priorityLabel, useT } from '@/i18n'
 import { projectRepo } from '@/storage/projectRepo'
 import { taskRepo } from '@/storage/taskRepo'
 import { PRIORITIES, type ID, type Priority } from '@/types'
@@ -63,6 +63,7 @@ export function QuickAddDialog({
   defaultStartDate?: string | null
   onCreated?: (taskId: ID) => void
 }) {
+  const t = useT()
   const workspaceId = useWorkspaceId()
   const projects = useLiveQuery(() => projectRepo.active(workspaceId), [workspaceId]) ?? []
 
@@ -99,11 +100,11 @@ export function QuickAddDialog({
         startDate: defaultStartDate,
         status: defaultStartDate ? 'planned' : 'inbox',
       })
-      toast.success('Task added')
+      toast.success(t('toastTaskAdded'))
       onCreated?.(created.id)
       onClose()
     } catch (error) {
-      toast.error((error as Error).message || 'Could not create the task')
+      toast.error((error as Error).message || t('toastTaskAddFailed'))
     } finally {
       setBusy(false)
     }
@@ -113,16 +114,16 @@ export function QuickAddDialog({
     <Modal
       open={open}
       onClose={onClose}
-      title="New task"
-      description="Use #tag and !high inline — they are stripped from the title."
+      title={t('shellNewTask')}
+      description={t('qaDesc')}
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={busy}>
-            Cancel
+            {t('cCancel')}
           </Button>
           <Button variant="primary" onClick={() => void submit()} disabled={busy || !parsed.title}>
             <Plus className="size-4" />
-            Add task
+            {t('qaSubmit')}
           </Button>
         </>
       }
@@ -130,7 +131,7 @@ export function QuickAddDialog({
       <div className="flex flex-col gap-3">
         <Input
           autoFocus
-          placeholder="What needs doing?"
+          placeholder={t('qaPlaceholder')}
           value={raw}
           onChange={(e) => setRaw(e.target.value)}
           onKeyDown={(e) => {
@@ -140,35 +141,35 @@ export function QuickAddDialog({
 
         {parsed.tags.length > 0 || parsed.priority ? (
           <p className="text-xs text-muted-foreground">
-            Detected:{' '}
-            {parsed.priority ? <span className="font-medium">{PRIORITY_LABEL[parsed.priority]}</span> : null}
+            {t('qaDetected')}{' '}
+            {parsed.priority ? <span className="font-medium">{priorityLabel(parsed.priority)}</span> : null}
             {parsed.priority && parsed.tags.length ? ' · ' : ''}
             {parsed.tags.map((tag) => `#${tag}`).join(' ')}
           </p>
         ) : null}
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Priority" htmlFor="qa-priority">
+          <Field label={t('qaPriority')} htmlFor="qa-priority">
             <OptionSelect
               id="qa-priority"
               value={parsed.priority ?? priority}
               disabled={Boolean(parsed.priority)}
               onChange={setPriority}
-              options={PRIORITIES.map((p) => ({ value: p, label: PRIORITY_LABEL[p] }))}
+              options={PRIORITIES.map((p) => ({ value: p, label: priorityLabel(p) }))}
             />
           </Field>
 
-          <Field label="Project" htmlFor="qa-project">
+          <Field label={t('qaProject')} htmlFor="qa-project">
             <OptionSelect
               id="qa-project"
               value={projectId}
-              placeholder="No project"
+              placeholder={t('qaNoProject')}
               onChange={setProjectId}
               options={projects.map((p) => ({ value: p.id, label: p.name }))}
             />
           </Field>
 
-          <Field label="Estimate (minutes)" htmlFor="qa-estimate">
+          <Field label={t('qaEstimate')} htmlFor="qa-estimate">
             <Input
               id="qa-estimate"
               type="number"
@@ -179,12 +180,11 @@ export function QuickAddDialog({
             />
           </Field>
 
-          <Field label="Due" htmlFor="qa-due">
-            <Input
+          <Field label={t('qaDue')} htmlFor="qa-due">
+            <JalaliDateTimePicker
               id="qa-due"
-              type="datetime-local"
               value={due}
-              onChange={(e) => setDue(e.target.value)}
+              onChange={(v) => setDue(v)}
             />
           </Field>
         </div>

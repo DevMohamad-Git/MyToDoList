@@ -41,11 +41,11 @@ export function App() {
   // Keep the browser tab title in the active language.
   useEffect(() => {
     document.title =
-      language === 'fa' ? 'Momentum OS — سیستم بهره‌وری شخصی' : 'Momentum OS'
+      language === 'fa' ? 'FlowOS — سیستم بهره‌وری شخصی' : 'FlowOS'
   }, [language])
 
   if (phase === 'loading') return <SplashScreen />
-  if (phase === 'error') return <StartupError message={error ?? 'Momentum OS could not start.'} />
+  if (phase === 'error') return <StartupError message={error ?? 'FlowOS could not start.'} />
 
   return (
     <BrowserRouter>
@@ -89,7 +89,7 @@ function StartupError({ message }: { message: string }) {
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-0.5 size-5 shrink-0 text-rose-400" />
           <div>
-            <h1 className="text-sm font-semibold">Momentum OS could not start</h1>
+            <h1 className="text-sm font-semibold">FlowOS could not start</h1>
             <p className="mt-1.5 text-sm text-muted-foreground">{message}</p>
             <Button
               variant="primary"

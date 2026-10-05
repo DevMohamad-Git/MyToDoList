@@ -12,8 +12,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'Momentum OS',
-        short_name: 'Momentum',
+        name: 'FlowOS',
+        short_name: 'FlowOS',
         description: 'Local-first personal productivity operating system.',
         theme_color: '#0b0d10',
         background_color: '#0b0d10',

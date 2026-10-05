@@ -1,9 +1,9 @@
 {
-  "name": "momentum-os",
+  "name": "flow-os",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Momentum OS — a local-first personal productivity operating system for the browser.",
+  "description": "FlowOS — a local-first personal productivity operating system for the browser.",
   "scripts": {
     "dev": "vite",
     "start": "vite --open",
@@ -18,6 +18,7 @@
   "dependencies": {
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "date-fns-jalali": "^4.4.0-0",
     "dexie": "^4.0.11",
     "dexie-react-hooks": "^1.1.7",
     "lucide-react": "^0.475.0",
@@ -26,6 +27,7 @@
     "react-router-dom": "^7.1.5",
     "recharts": "^2.15.1",
     "tailwind-merge": "^3.0.1",
+    "vazirmatn": "^33.0.3",
     "zustand": "^5.0.3"
   },
   "devDependencies": {

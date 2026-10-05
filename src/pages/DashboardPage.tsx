@@ -5,15 +5,19 @@ import {
   CalendarDays,
   CheckCircle2,
   Flame,
+  FolderKanban,
   Inbox,
+  Plus,
+  RotateCcw,
   Sparkles,
   Timer,
   TrendingDown,
   TrendingUp,
 } from 'lucide-react'
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { subDays } from 'date-fns'
+import { QuickAddDialog } from '@/components/tasks/QuickAddDialog'
 import { TaskEditorModal } from '@/components/tasks/TaskEditorModal'
 import { TaskRow } from '@/components/tasks/TaskRow'
 import {
@@ -21,6 +25,7 @@ import {
   Card,
   CardBody,
   CardHeader,
+  ConfirmDialog,
   EmptyState,
   LoadingState,
   PageHeader,
@@ -29,13 +34,13 @@ import {
   StatTile,
   toast,
 } from '@/components/ui'
-import { seedInto } from '@/database/seed'
 import { intlLocale, ratingLabel, useT, type TranslationKey } from '@/i18n'
 import { buildDashboardSummary, dayScoreSeries, scoreTrend } from '@/services/analytics'
 import { SEVERITY_TEXT, buildRecommendations } from '@/services/recommendations'
 import { habitRepo } from '@/storage/habitRepo'
 import { projectRepo } from '@/storage/projectRepo'
 import { taskRepo } from '@/storage/taskRepo'
+import { workspaceRepo } from '@/storage/workspaceRepo'
 import { useSnapshot } from '@/hooks/useSnapshot'
 import { useWorkspace } from '@/stores/workspace'
 import type { ID, Task } from '@/types'
@@ -60,27 +65,17 @@ const COMPONENT_KEY: Record<string, TranslationKey> = {
 
 export function DashboardPage() {
   const t = useT()
+  const navigate = useNavigate()
   const workspace = useWorkspace()
   const snapshot = useSnapshot()
   const projects = useLiveQuery(() => projectRepo.list(workspace.id), [workspace.id]) ?? []
   const [editingId, setEditingId] = useState<ID | null>(null)
-  const [seeding, setSeeding] = useState(false)
+  const [quickAddOpen, setQuickAddOpen] = useState(false)
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
 
   async function toggle(task: Task) {
     const next = await taskRepo.toggleComplete(task.id)
     if (next?.status === 'completed') toast.success(t('toastCompleted', { title: next.title }))
-  }
-
-  async function seed() {
-    setSeeding(true)
-    try {
-      await seedInto(workspace.id)
-      toast.success(t('toastSampleAdded'))
-    } catch (error) {
-      toast.error((error as Error).message || t('toastSampleFailed'))
-    } finally {
-      setSeeding(false)
-    }
   }
 
   if (!snapshot) return <LoadingState label={t('dashBuilding')} />
@@ -93,16 +88,23 @@ export function DashboardPage() {
           description={t('dashWelcomeDesc')}
         />
         <EmptyState
-          icon={<Sparkles className="size-8" />}
+          icon={<CheckCircle2 className="size-8 text-accent" />}
           title={t('dashEmptyTitle')}
           description={t('dashEmptyDesc')}
           action={
-            <Button variant="primary" onClick={() => void seed()} disabled={seeding}>
-              <Sparkles className="size-4" />
-              {seeding ? t('dashAdding') : t('dashLoadSample')}
-            </Button>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <Button variant="primary" onClick={() => setQuickAddOpen(true)}>
+                <Plus className="size-4" />
+                {t('shellNewTask')}
+              </Button>
+              <Button variant="secondary" onClick={() => navigate('/projects')}>
+                <FolderKanban className="size-4" />
+                {t('dashAllProjects')}
+              </Button>
+            </div>
           }
         />
+        <QuickAddDialog open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
       </>
     )
   }
@@ -129,6 +131,23 @@ export function DashboardPage() {
           day: 'numeric',
           month: 'long',
         })}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setClearConfirmOpen(true)}
+              title={t('dashResetToEmpty')}
+            >
+              <RotateCcw className="size-3.5" />
+              {t('dashResetToEmpty')}
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => setQuickAddOpen(true)}>
+              <Plus className="size-3.5" />
+              {t('shellNewTask')}
+            </Button>
+          </div>
+        }
       />
 
       {/* ------------------------------------------------------------ score -- */}
@@ -561,6 +580,22 @@ export function DashboardPage() {
         taskId={editingId}
         open={editingId != null}
         onClose={() => setEditingId(null)}
+      />
+
+      <QuickAddDialog open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
+
+      <ConfirmDialog
+        open={clearConfirmOpen}
+        onClose={() => setClearConfirmOpen(false)}
+        onConfirm={async () => {
+          await workspaceRepo.clearContent(workspace.id)
+          toast.success(t('toastContentCleared'))
+          setClearConfirmOpen(false)
+        }}
+        title={t('setClearConfirmTitle')}
+        message={t('setClearConfirmMsg', { name: workspace.name })}
+        confirmLabel={t('setClearConfirmBtn')}
+        destructive
       />
     </>
   )

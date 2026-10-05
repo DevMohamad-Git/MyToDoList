@@ -113,7 +113,7 @@ export async function openDatabase(): Promise<DBOpenResult> {
         ok: false,
         reason: 'version',
         message:
-          'This browser holds a database created by a newer version of Momentum OS. Update the app, or export and reset local data.',
+          'This browser holds a database created by a newer version of FlowOS. Update the app, or export and reset local data.',
       }
     }
     if (err.name === 'BlockedError' || err.name === 'DatabaseClosedError') {
@@ -121,7 +121,7 @@ export async function openDatabase(): Promise<DBOpenResult> {
         ok: false,
         reason: 'blocked',
         message:
-          'The database is locked by another tab. Close other Momentum OS tabs and reload.',
+          'The database is locked by another tab. Close other FlowOS tabs and reload.',
       }
     }
     return {

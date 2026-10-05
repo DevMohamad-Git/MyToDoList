@@ -28,6 +28,7 @@ import {
   CardBody,
   CardHeader,
   EmptyState,
+  JalaliDatePicker,
   PageHeader,
   ProgressBar,
   SegmentedControl,
@@ -97,12 +98,11 @@ export function AnalyticsPage() {
         description="What the numbers say about how the last stretch actually went."
         actions={
           <>
-            <input
-              type="date"
+            <JalaliDatePicker
               value={anchor}
               max={toDayKey(new Date())}
-              onChange={(e) => e.target.value && setAnchor(e.target.value)}
-              className="h-8 rounded-lg border border-input bg-background px-2 text-xs focus:border-accent focus:outline-none"
+              onChange={(v) => v && setAnchor(v)}
+              className="w-36"
             />
             <SegmentedControl
               value={range}

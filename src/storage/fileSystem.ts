@@ -206,7 +206,7 @@ export async function saveTextFile(
     try {
       const handle = await w.showSaveFilePicker({
         suggestedName: filename,
-        types: [{ description: 'Momentum export', accept: { [mimeType]: [`.${filename.split('.').pop()}`] } }],
+        types: [{ description: 'FlowOS export', accept: { [mimeType]: [`.${filename.split('.').pop()}`] } }],
       })
       const writable = await handle.createWritable()
       await writable.write(blob)

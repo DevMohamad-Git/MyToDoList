@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { App } from '@/App'
 import { initI18n } from '@/i18n'
 import { initAppearance } from '@/stores/appearance'
+import 'vazirmatn/Vazirmatn-font-face.css'
 import '@/index.css'
 
 /**
