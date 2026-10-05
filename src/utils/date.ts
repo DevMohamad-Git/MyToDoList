@@ -16,6 +16,21 @@ import { enUS, faIR } from 'date-fns/locale'
 import type { Locale } from 'date-fns'
 import { t, useI18n } from '@/i18n'
 import type { DayKey, ISODateTime, WeekDay } from '@/types'
+import {
+  formatJalali,
+  formatJalaliDayLabel,
+  jalaliMonthGridDays,
+  jalaliMonthRange,
+  jalaliWeekRange,
+  toJalaliParts,
+} from './jalali'
+
+/* ----------------------------------------------------------- internal helpers */
+
+/** True when the active UI language is Persian → use Jalali calendar. */
+function isJalali(): boolean {
+  return useI18n.getState().language === 'fa'
+}
 
 /**
  * Day keys are **local** calendar days (`yyyy-MM-dd`), not UTC. A task due at
@@ -66,6 +81,7 @@ export function dayRange(day: Date | DayKey): { start: Date; end: Date } {
 }
 
 export function weekRange(date: Date, weekStartsOn: WeekDay) {
+  if (isJalali()) return jalaliWeekRange(date, weekStartsOn)
   return {
     start: startOfWeek(date, { weekStartsOn }),
     end: endOfWeek(date, { weekStartsOn }),
@@ -73,6 +89,7 @@ export function weekRange(date: Date, weekStartsOn: WeekDay) {
 }
 
 export function monthRange(date: Date) {
+  if (isJalali()) return jalaliMonthRange(date)
   return { start: startOfMonth(date), end: endOfMonth(date) }
 }
 
@@ -87,8 +104,10 @@ export function dayKeysBetween(start: Date, end: Date): DayKey[] {
 
 /**
  * Calendar grid for a month view: always whole weeks so the grid is rectangular.
+ * Uses Jalali calendar when in Persian mode.
  */
 export function monthGridDays(date: Date, weekStartsOn: WeekDay): Date[] {
+  if (isJalali()) return jalaliMonthGridDays(date, weekStartsOn)
   const first = startOfWeek(startOfMonth(date), { weekStartsOn })
   const last = endOfWeek(endOfMonth(date), { weekStartsOn })
   return eachDayOfInterval({ start: first, end: last })
@@ -144,11 +163,13 @@ export function formatClock(value: ISODateTime | Date): string {
 }
 
 export function formatDate(value: ISODateTime | Date, pattern = 'd MMM yyyy'): string {
+  if (isJalali()) return formatJalali(value, pattern)
   const d = typeof value === 'string' ? parseISO(value) : value
   return format(d, pattern, { locale: activeDateLocale() })
 }
 
 export function formatDayLabel(day: DayKey): string {
+  if (isJalali()) return formatJalaliDayLabel(day)
   return format(fromDayKey(day), 'EEE d MMM', { locale: activeDateLocale() })
 }
 
@@ -160,6 +181,7 @@ export function formatRelativeDay(value: ISODateTime, now: Date = new Date()): s
   if (diff === -1) return t('dYesterday')
   if (diff < 0) return t('dOverdueBy', { n: Math.abs(diff) })
   if (diff <= 7) return t('dInDays', { n: diff })
+  if (isJalali()) return formatJalali(value, 'd MMM')
   return format(parseISO(value), 'd MMM', { locale: activeDateLocale() })
 }
 
@@ -209,3 +231,24 @@ export function fromDateInput(value: string): ISODateTime | null {
   if (!y || !m || !d) return null
   return new Date(y, m - 1, d, 12, 0, 0, 0).toISOString()
 }
+
+/* ------------------------------------------------------- Jalali date input -- */
+
+/**
+ * Convert a Gregorian `DayKey` to a Jalali display string `yyyy/MM/dd`.
+ */
+export function toJalaliDateDisplay(day: DayKey): string {
+  const date = fromDayKey(day)
+  const parts = toJalaliParts(date)
+  return `${parts.year}/${String(parts.month).padStart(2, '0')}/${String(parts.day).padStart(2, '0')}`
+}
+
+/**
+ * Return the day-of-month number (1-31), aware of Jalali calendar in Persian mode.
+ */
+export function formatDayNumber(day: Date | DayKey): number {
+  const d = typeof day === 'string' ? fromDayKey(day) : day
+  if (isJalali()) return toJalaliParts(d).day
+  return d.getDate()
+}
+
