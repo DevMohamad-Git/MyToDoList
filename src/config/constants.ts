@@ -212,3 +212,6 @@ export const CLOSED_TASK_STATUSES: TaskStatus[] = ['completed', 'cancelled']
 
 /** Attachment size guard. Beyond this a single blob makes IndexedDB writes slow. */
 export const MAX_INLINE_ATTACHMENT_BYTES = 64 * 1024 * 1024
+
+/** Total attachment size cap per task. Prevents any single task from monopolizing storage. */
+export const MAX_TASK_ATTACHMENTS_TOTAL_BYTES = 256 * 1024 * 1024

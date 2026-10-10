@@ -6,11 +6,14 @@ import {
   CalendarDays,
   CalendarPlus,
   Check,
+  Coffee,
   ListChecks,
+  Plus,
+  Search,
   Sparkles,
   Wand2,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { buildDayPlan } from '@/services/planner'
 import {
   autoSchedule,
@@ -22,6 +25,8 @@ import {
   type PlanProposal,
   type ReschedulePlan,
 } from '@/services/planner'
+import { QuickAddDialog } from '@/components/tasks/QuickAddDialog'
+import { TaskEditorModal } from '@/components/tasks/TaskEditorModal'
 import { TaskRow } from '@/components/tasks/TaskRow'
 import {
   Badge,
@@ -38,18 +43,21 @@ import {
   toast,
 } from '@/components/ui'
 import { CLOSED_TASK_STATUSES } from '@/config/constants'
+import { priorityLabel, useT } from '@/i18n'
 import { projectRepo } from '@/storage/projectRepo'
 import { taskRepo } from '@/storage/taskRepo'
 import { useSettings, useWorkspaceId } from '@/stores/workspace'
-import type { Task } from '@/types'
+import type { Priority, Task } from '@/types'
 import { cn } from '@/utils/cn'
 import {
   addDays,
+  dayAtMinutes,
   dayRange,
   formatDayLabel,
   formatDuration,
   formatMinutesOfDay,
   fromDayKey,
+  minutesIntoDay,
   toDayKey,
   toISO,
 } from '@/utils/date'
@@ -63,6 +71,7 @@ import {
  */
 
 export function PlannerPage() {
+  const t = useT()
   const workspaceId = useWorkspaceId()
   const settings = useSettings()
 
@@ -71,6 +80,23 @@ export function PlannerPage() {
   const [proposal, setProposal] = useState<PlanProposal | null>(null)
   const [reschedulePlan, setReschedulePlan] = useState<ReschedulePlan | null>(null)
   const [applying, setApplying] = useState(false)
+
+  // Interactive enhancements & performance states
+  const [now, setNow] = useState(() => new Date())
+  const [bufferMinutes, setBufferMinutes] = useState<number>(0)
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
+  const [quickAddOpen, setQuickAddOpen] = useState(false)
+  const [quickAddStartDate, setQuickAddStartDate] = useState<string | null>(null)
+  const [backlogSearch, setBacklogSearch] = useState('')
+  const [backlogPriority, setBacklogPriority] = useState<Priority | 'all'>('all')
+
+  // Live minute ticker: updates "now" every 60s so time indicators and behind-schedule stay fresh
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(new Date())
+    }, 60_000)
+    return () => clearInterval(timer)
+  }, [])
 
   const { start, end } = dayRange(day)
   const scheduled =
@@ -101,26 +127,29 @@ export function PlannerPage() {
     [day, scheduled, settings.planning],
   )
 
-  const now = new Date()
   const behind = useMemo(
     () => behindScheduleReport(plan, now, settings.planning),
-    [plan, settings.planning],
+    [plan, now, settings.planning],
   )
   const reschedulePlans = useMemo(
     () =>
       day === toDayKey(now) && behind.missedBlocks.length > 0
         ? buildReschedulePlans(plan, now, settings.planning, toDayKey(new Date(now.getTime() + 86_400_000)))
         : [],
-    // Recomputing every render keeps "now" fresh without a ticking timer.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [plan, settings.planning, day, behind.missedBlocks.length],
+    [plan, now, settings.planning, day, behind.missedBlocks.length],
   )
 
-  const backlog = useMemo(
-    () => [...backlogSource].sort((a, b) => urgencyScore(b, now) - urgencyScore(a, now)).slice(0, 12),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [backlogSource],
-  )
+  const filteredBacklog = useMemo(() => {
+    let list = backlogSource
+    if (backlogSearch.trim()) {
+      const q = backlogSearch.toLowerCase().trim()
+      list = list.filter((task) => task.title.toLowerCase().includes(q))
+    }
+    if (backlogPriority !== 'all') {
+      list = list.filter((task) => task.priority === backlogPriority)
+    }
+    return [...list].sort((a, b) => urgencyScore(b, now) - urgencyScore(a, now)).slice(0, 15)
+  }, [backlogSource, backlogSearch, backlogPriority, now])
 
   const projectNames = useLiveQuery(
     async () => {
@@ -134,6 +163,11 @@ export function PlannerPage() {
     setDay(toDayKey(addDays(fromDayKey(day), delta)))
   }
 
+  function handleSlotClick(slotHour: number) {
+    setQuickAddStartDate(toISO(dayAtMinutes(day, slotHour * 60)))
+    setQuickAddOpen(true)
+  }
+
   function runAutoPlan() {
     const p = autoSchedule({
       day,
@@ -141,44 +175,53 @@ export function PlannerPage() {
       existing: scheduled,
       settings: settings.planning,
       allTasks: allOpen,
+      bufferMinutes,
     })
     if (p.items.length === 0) {
-      toast.info('Nothing could be scheduled — no free slots or nothing fits today.')
+      toast.info(t('plannerToastNoFit'))
       return
     }
     setProposal(p)
   }
 
+  // Parallel bulk update for top database performance
   async function applyProposal() {
     if (!proposal) return
     setApplying(true)
     try {
       const patches = proposalToPatches(proposal)
-      for (const patch of patches) {
-        await taskRepo.update(patch.id, {
-          startDate: patch.startDate,
-          status: 'planned',
-        })
-      }
-      toast.success(`Scheduled ${patches.length} task${patches.length === 1 ? '' : 's'} for ${formatDayLabel(day)}`)
+      await Promise.all(
+        patches.map((patch) =>
+          taskRepo.update(patch.id, {
+            startDate: patch.startDate,
+            status: 'planned',
+          }),
+        ),
+      )
+      toast.success(t('plannerToastScheduledN', { n: patches.length, day: formatDayLabel(day) }))
       setProposal(null)
     } catch (error) {
-      toast.error((error as Error).message || 'Could not apply the plan')
+      toast.error((error as Error).message || t('plannerToastApplyError'))
     } finally {
       setApplying(false)
     }
   }
 
+  // Parallel bulk update for reschedule actions
   async function applyReschedule() {
     if (!reschedulePlan) return
     setApplying(true)
     try {
       const patches = rescheduleToPatches(reschedulePlan.actions)
-      for (const patch of patches) await taskRepo.update(patch.id, { startDate: patch.startDate })
-      toast.success(`Applied “${reschedulePlan.label}” — ${patches.length} task(s) moved`)
+      await Promise.all(
+        patches.map((patch) =>
+          taskRepo.update(patch.id, { startDate: patch.startDate }),
+        ),
+      )
+      toast.success(t('plannerToastRescheduleApplied', { label: reschedulePlan.label, n: patches.length }))
       setReschedulePlan(null)
     } catch (error) {
-      toast.error((error as Error).message || 'Could not apply the reschedule')
+      toast.error((error as Error).message || t('plannerToastRescheduleError'))
     } finally {
       setApplying(false)
     }
@@ -191,14 +234,15 @@ export function PlannerPage() {
       existing: scheduled,
       settings: settings.planning,
       allTasks: allOpen,
+      bufferMinutes,
     })
     if (p.items.length === 0) {
-      toast.info(`No free slot today fits “${task.title}”.`)
+      toast.info(t('plannerToastSingleNoSlot', { title: task.title }))
       return
     }
     const patch = proposalToPatches(p)[0]
     await taskRepo.update(patch.id, { startDate: patch.startDate, status: 'planned' })
-    toast.success(`“${task.title}” scheduled at ${formatMinutesOfDay(p.items[0].start)}`)
+    toast.success(t('plannerToastSingleScheduled', { title: task.title, time: formatMinutesOfDay(p.items[0].start) }))
   }
 
   const startHour = Math.floor(plan.workStart / 60)
@@ -206,53 +250,78 @@ export function PlannerPage() {
   const hourHeight = zoom === 'compact' ? 44 : 64
   const timelineMinutes = (endHour - startHour) * 60
 
+  // Live Time Indicator calculation for today
+  const isToday = day === toDayKey(now)
+  const nowMinutes = minutesIntoDay(now)
+  const isNowWithinTimeline = isToday && nowMinutes >= startHour * 60 && nowMinutes <= endHour * 60
+  const nowTop = isNowWithinTimeline ? ((nowMinutes - startHour * 60) * hourHeight) / 60 : null
+
   return (
     <>
       <PageHeader
-        title="Planner"
-        description="Lay the day out, spot conflicts, and auto-fill the gaps with your most urgent work."
+        title={t('plannerTitle')}
+        description={t('plannerDesc')}
         actions={
-          <>
+          <div className="flex flex-wrap items-center gap-2">
             <SegmentedControl
               value={zoom}
               options={[
-                { value: 'compact', label: 'Compact' },
-                { value: 'full', label: 'Full' },
+                { value: 'compact', label: t('plannerZoomCompact') },
+                { value: 'full', label: t('plannerZoomFull') },
               ]}
               onChange={setZoom}
             />
+
+            {/* Buffer Selector */}
+            <div
+              className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground shadow-sm"
+              title={t('plannerBuffer')}
+            >
+              <Coffee className="size-3.5 text-accent" />
+              <span className="hidden sm:inline">{t('plannerBuffer')}:</span>
+              <select
+                value={bufferMinutes}
+                onChange={(e) => setBufferMinutes(Number(e.target.value))}
+                className="bg-transparent font-medium text-foreground outline-none cursor-pointer"
+              >
+                <option value={0} className="bg-card text-foreground">{t('plannerBufferNone')}</option>
+                <option value={5} className="bg-card text-foreground">{t('plannerBuffer5')}</option>
+                <option value={10} className="bg-card text-foreground">{t('plannerBuffer10')}</option>
+                <option value={15} className="bg-card text-foreground">{t('plannerBuffer15')}</option>
+              </select>
+            </div>
+
             <Button variant="primary" onClick={runAutoPlan}>
               <Wand2 className="size-4" />
-              Auto-plan day
+              {t('plannerAutoPlan')}
             </Button>
-          </>
+          </div>
         }
       />
 
       {/* ------------------------------------------------------------ day nav -- */}
       <Card className="mb-4 p-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="icon" aria-label="Previous day" onClick={() => shiftDay(-1)}>
-            <ArrowLeft className="size-4" />
+          <Button variant="outline" size="icon" aria-label={t('plannerPrevDay')} onClick={() => shiftDay(-1)}>
+            <ArrowLeft className="size-4 rtl:rotate-180" />
           </Button>
           <JalaliDatePicker
             value={day}
             onChange={(v) => v && setDay(v)}
             className="w-44"
           />
-          <Button variant="outline" size="icon" aria-label="Next day" onClick={() => shiftDay(1)}>
-            <ArrowRight className="size-4" />
+          <Button variant="outline" size="icon" aria-label={t('plannerNextDay')} onClick={() => shiftDay(1)}>
+            <ArrowRight className="size-4 rtl:rotate-180" />
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setDay(toDayKey(new Date()))}>
-            Today
+            {t('plannerToday')}
           </Button>
-          <span className="ml-2 text-sm font-medium">{formatDayLabel(day)}</span>
-          {!plan.isWorkday ? <Badge>Non-workday</Badge> : null}
+          <span className="ms-2 text-sm font-medium">{formatDayLabel(day)}</span>
 
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ms-auto flex items-center gap-3">
             <div className="w-40">
               <div className="flex justify-between text-[11px] text-muted-foreground">
-                <span>Load</span>
+                <span>{t('plannerLoad')}</span>
                 <span className="tabular-nums">
                   {formatDuration(plan.scheduledMinutes)} / {formatDuration(plan.capacityMinutes)}
                 </span>
@@ -265,13 +334,15 @@ export function PlannerPage() {
             </div>
             {plan.overbooked ? (
               <Badge className="border-rose-500/25 bg-rose-500/10 text-rose-400">
-                {plan.loadPercent}% booked
+                {t('plannerBookedPercent', { n: plan.loadPercent })}
               </Badge>
             ) : null}
             {plan.conflictCount > 0 ? (
               <Badge className="border-amber-500/25 bg-amber-500/10 text-amber-400">
                 <AlertTriangle className="size-3" />
-                {plan.conflictCount} conflict{plan.conflictCount === 1 ? '' : 's'}
+                {plan.conflictCount === 1
+                  ? t('plannerConflictCount1')
+                  : t('plannerConflictCountN', { n: plan.conflictCount })}
               </Badge>
             ) : null}
           </div>
@@ -282,8 +353,12 @@ export function PlannerPage() {
       {reschedulePlans.length > 0 ? (
         <Card className="mb-4 border-amber-500/30 bg-amber-500/5">
           <CardHeader
-            title={`${behind.missedBlocks.length} scheduled block(s) have already passed`}
-            description={`You are ${formatDuration(behind.behindMinutes)} behind. Pick how to recover:`}
+            title={
+              behind.missedBlocks.length === 1
+                ? t('plannerBehindScheduleTitle1')
+                : t('plannerBehindScheduleTitleN', { n: behind.missedBlocks.length })
+            }
+            description={t('plannerBehindScheduleDesc', { dur: formatDuration(behind.behindMinutes) })}
             icon={<AlertTriangle className="size-4 text-amber-400" />}
           />
           <CardBody className="grid gap-2 sm:grid-cols-3">
@@ -292,7 +367,7 @@ export function PlannerPage() {
                 key={rp.strategy}
                 type="button"
                 onClick={() => setReschedulePlan(rp)}
-                className="rounded-lg border border-border bg-card p-3 text-left transition-colors hover:border-accent"
+                className="rounded-lg border border-border bg-card p-3 text-start transition-colors hover:border-accent"
               >
                 <div className="text-sm font-medium">{rp.label}</div>
                 <p className="mt-1 text-xs text-muted-foreground">{rp.description}</p>
@@ -306,23 +381,57 @@ export function PlannerPage() {
         {/* ------------------------------------------------------- timeline -- */}
         <Card className="overflow-hidden">
           <CardHeader
-            title="Timeline"
-            description={`${formatMinutesOfDay(plan.workStart)}–${formatMinutesOfDay(plan.workEnd)} · ${plan.blocks.length} block(s)`}
+            title={t('plannerTimelineTitle')}
+            description={t('plannerTimelineDesc', {
+              start: formatMinutesOfDay(plan.workStart),
+              end: formatMinutesOfDay(plan.workEnd),
+              blocks: plan.blocks.length,
+            })}
             icon={<CalendarDays className="size-4" />}
           />
           <div className="relative" style={{ height: timelineMinutes * (hourHeight / 60) }}>
-            {Array.from({ length: endHour - startHour }, (_, i) => (
-              <div
-                key={i}
-                className="absolute inset-x-0 border-t border-border/60"
-                style={{ top: i * hourHeight }}
-              >
-                <span className="absolute -top-2 left-2 bg-card px-1 text-[10px] tabular-nums text-muted-foreground">
-                  {String(startHour + i).padStart(2, '0')}:00
-                </span>
-              </div>
-            ))}
+            {/* Hour Grid Lines with Click-to-Add */}
+            {Array.from({ length: endHour - startHour }, (_, i) => {
+              const slotHour = startHour + i
+              return (
+                <div
+                  key={i}
+                  onClick={() => handleSlotClick(slotHour)}
+                  className="group/slot absolute inset-x-0 border-t border-border/60 hover:bg-accent/5 transition-colors cursor-pointer"
+                  style={{ top: i * hourHeight, height: hourHeight }}
+                  title={`${formatMinutesOfDay(slotHour * 60)} — ${t('plannerClickToSchedule')}`}
+                >
+                  <span className="absolute -top-2 start-2 bg-card px-1 text-[10px] tabular-nums text-muted-foreground select-none">
+                    {String(slotHour).padStart(2, '0')}:00
+                  </span>
+                  <span className="absolute top-1 end-3 opacity-0 group-hover/slot:opacity-100 text-[10px] text-muted-foreground hover:text-accent flex items-center gap-1 transition-opacity select-none">
+                    <Plus className="size-3" />
+                    {t('plannerAddAtTime')}
+                  </span>
+                </div>
+              )
+            })}
 
+            {/* Live Current Time Line Indicator */}
+            {nowTop != null ? (
+              <div
+                className="pointer-events-none absolute inset-x-0 z-20 flex items-center transition-all duration-300"
+                style={{ top: nowTop }}
+              >
+                <div className="absolute start-12 -translate-y-1/2 flex items-center gap-1.5 bg-background/95 px-1.5 py-0.5 rounded-full border border-rose-500/30 shadow-sm">
+                  <span className="relative flex size-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
+                    <span className="relative inline-flex size-2 rounded-full bg-rose-500" />
+                  </span>
+                  <span className="text-[10px] font-bold text-rose-500 tabular-nums">
+                    {formatMinutesOfDay(nowMinutes)}
+                  </span>
+                </div>
+                <div className="ms-28 w-full border-t-2 border-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.35)]" />
+              </div>
+            ) : null}
+
+            {/* Scheduled Task Blocks */}
             {plan.blocks.map((block) => {
               const top = ((block.start - startHour * 60) * hourHeight) / 60
               const height = Math.max(24, ((block.end - block.start) * hourHeight) / 60)
@@ -331,16 +440,21 @@ export function PlannerPage() {
               return (
                 <div
                   key={block.task.id}
-                  title={`${block.task.title} · ${formatMinutesOfDay(block.start)}–${formatMinutesOfDay(block.end)}${conflict ? ' · overlaps another block' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setEditingTaskId(block.task.id)
+                  }}
+                  title={`${block.task.title} · ${formatMinutesOfDay(block.start)}–${formatMinutesOfDay(block.end)}${conflict ? ` · ${t('plannerOverlapping')}` : ''} — ${t('plannerClickToEdit')}`}
                   className={cn(
-                    'absolute left-16 right-3 overflow-hidden rounded-lg border px-2.5 py-1.5 text-xs shadow-sm',
+                    'group/block absolute start-16 end-3 overflow-hidden rounded-lg border px-2.5 py-1.5 text-xs shadow-sm transition-all duration-150',
+                    'cursor-pointer hover:shadow-md hover:border-accent hover:z-10',
                     closed ? 'border-border bg-muted/40 opacity-60' : 'border-border bg-card',
-                    conflict && 'border-amber-500/50',
+                    conflict && 'border-amber-500/50 bg-amber-500/5',
                   )}
                   style={{ top, height }}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className={cn('truncate font-medium', closed && 'line-through')}>
+                    <span className={cn('truncate font-medium group-hover/block:text-accent transition-colors', closed && 'line-through')}>
                       {block.task.title}
                     </span>
                     <span className="shrink-0 tabular-nums text-muted-foreground">
@@ -350,8 +464,8 @@ export function PlannerPage() {
                   {height >= 44 ? (
                     <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
                       {formatDuration(block.end - block.start)}
-                      {conflict ? ' · overlapping' : ''}
-                      {block.task.priority !== 'medium' ? ` · ${block.task.priority}` : ''}
+                      {conflict ? ` · ${t('plannerOverlapping')}` : ''}
+                      {block.task.priority !== 'medium' ? ` · ${priorityLabel(block.task.priority)}` : ''}
                     </div>
                   ) : null}
                 </div>
@@ -359,9 +473,9 @@ export function PlannerPage() {
             })}
 
             {plan.blocks.length === 0 ? (
-              <div className="absolute inset-0 flex items-center justify-center">
+              <div className="absolute inset-0 flex items-center justify-center p-4 text-center pointer-events-none">
                 <p className="text-sm text-muted-foreground">
-                  Nothing scheduled. Use Auto-plan or pick from the backlog.
+                  {t('plannerTimelineEmpty')}
                 </p>
               </div>
             ) : null}
@@ -369,39 +483,86 @@ export function PlannerPage() {
         </Card>
 
         {/* -------------------------------------------------------- backlog -- */}
-        <Card>
+        <Card className="flex flex-col">
           <CardHeader
-            title="Backlog"
-            description="Open, unscheduled tasks — most urgent first"
+            title={t('plannerBacklogTitle')}
+            description={t('plannerBacklogDesc')}
             icon={<ListChecks className="size-4" />}
           />
-          {backlog.length === 0 ? (
+
+          {/* Backlog Search & Filter Bar */}
+          <div className="px-4 pb-3 space-y-2 border-b border-border/50">
+            <div className="relative">
+              <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+              <input
+                type="text"
+                value={backlogSearch}
+                onChange={(e) => setBacklogSearch(e.target.value)}
+                placeholder={t('plannerSearchBacklog')}
+                className="w-full rounded-md border border-border bg-muted/30 ps-8 pe-3 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:border-accent focus:bg-background focus:outline-none transition-colors"
+              />
+              {backlogSearch ? (
+                <button
+                  type="button"
+                  onClick={() => setBacklogSearch('')}
+                  className="absolute end-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs"
+                >
+                  ✕
+                </button>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-1 text-[11px]">
+              {(['all', 'critical', 'high', 'medium', 'low'] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setBacklogPriority(p)}
+                  className={cn(
+                    'rounded px-2 py-0.5 font-medium transition-colors',
+                    backlogPriority === p
+                      ? 'bg-accent/15 text-accent font-semibold'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
+                  )}
+                >
+                  {p === 'all'
+                    ? t('plannerFilterAll')
+                    : p === 'critical'
+                      ? t('plannerFilterCritical')
+                      : p === 'high'
+                        ? t('plannerFilterHigh')
+                        : priorityLabel(p)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {filteredBacklog.length === 0 ? (
             <CardBody>
               <EmptyState
                 icon={<Check className="size-6" />}
-                title="Backlog is clear"
-                description="Every open task has a place on the calendar."
+                title={t('plannerBacklogEmptyTitle')}
+                description={t('plannerBacklogEmptyDesc')}
               />
             </CardBody>
           ) : (
-            <div>
-              {backlog.map((task) => (
+            <div className="divide-y divide-border/40">
+              {filteredBacklog.map((task) => (
                 <div key={task.id} className="group relative">
                   <TaskRow
                     task={task}
                     project={task.projectId ? (projectNames?.get(task.projectId) ?? null) : null}
-                    onToggle={async (t) => {
-                      const next = await taskRepo.toggleComplete(t.id)
-                      if (next?.status === 'completed') toast.success(`Completed “${next.title}”`)
+                    onToggle={async (tRow) => {
+                      const next = await taskRepo.toggleComplete(tRow.id)
+                      if (next?.status === 'completed') toast.success(t('toastCompleted', { title: next.title }))
                     }}
                   />
                   <button
                     type="button"
                     onClick={() => void scheduleSingle(task)}
-                    title="Schedule in the next free slot"
-                    className="absolute top-2.5 right-9 rounded-md border border-border bg-card px-1.5 py-1 text-[10px] font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-accent"
+                    title={t('plannerScheduleTooltip')}
+                    className="absolute top-2.5 end-9 rounded-md border border-border bg-card px-1.5 py-1 text-[10px] font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-accent shadow-sm"
                   >
-                    + plan
+                    {t('plannerPlanAction')}
                   </button>
                 </div>
               ))}
@@ -414,21 +575,25 @@ export function PlannerPage() {
       <Modal
         open={proposal != null}
         onClose={() => setProposal(null)}
-        title={`Proposed plan for ${formatDayLabel(proposal?.day ?? day)}`}
+        title={t('plannerProposalTitle', { day: formatDayLabel(proposal?.day ?? day) })}
         description={
           proposal
-            ? `${proposal.items.length} placed · ${formatDuration(proposal.totalMinutes)} of ${formatDuration(proposal.availableMinutes)} available`
+            ? t('plannerProposalDesc', {
+                items: proposal.items.length,
+                total: formatDuration(proposal.totalMinutes),
+                available: formatDuration(proposal.availableMinutes),
+              })
             : undefined
         }
         size="lg"
         footer={
           <>
             <Button variant="ghost" onClick={() => setProposal(null)} disabled={applying}>
-              Cancel
+              {t('cCancel')}
             </Button>
             <Button variant="primary" onClick={() => void applyProposal()} disabled={applying}>
               <Sparkles className="size-4" />
-              {applying ? 'Applying…' : `Apply ${proposal?.items.length ?? 0} schedule change(s)`}
+              {applying ? t('plannerApplying') : t('plannerApplyChanges', { n: proposal?.items.length ?? 0 })}
             </Button>
           </>
         }
@@ -452,7 +617,7 @@ export function PlannerPage() {
             {proposal.skipped.length > 0 ? (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
                 <h3 className="text-xs font-semibold text-amber-400">
-                  {proposal.skipped.length} not scheduled
+                  {t('plannerNotScheduledTitle', { n: proposal.skipped.length })}
                 </h3>
                 <ul className="mt-1.5 space-y-1 text-xs text-muted-foreground">
                   {proposal.skipped.map((s) => (
@@ -477,11 +642,11 @@ export function PlannerPage() {
         footer={
           <>
             <Button variant="ghost" onClick={() => setReschedulePlan(null)} disabled={applying}>
-              Cancel
+              {t('cCancel')}
             </Button>
             <Button variant="primary" onClick={() => void applyReschedule()} disabled={applying}>
               <CalendarPlus className="size-4" />
-              {applying ? 'Applying…' : 'Apply moves'}
+              {applying ? t('plannerApplying') : t('plannerApplyMoves')}
             </Button>
           </>
         }
@@ -499,13 +664,28 @@ export function PlannerPage() {
             ))}
             {reschedulePlan.protectedTasks.length > 0 ? (
               <p className="text-xs text-muted-foreground">
-                Protected: {reschedulePlan.protectedTasks.map((t) => t.title).join(', ')}
+                {t('plannerProtected', {
+                  tasks: reschedulePlan.protectedTasks.map((pt) => pt.title).join(', '),
+                })}
               </p>
             ) : null}
           </div>
         ) : null}
       </Modal>
 
+      {/* ------------------------------------------------ task editor modal -- */}
+      <TaskEditorModal
+        taskId={editingTaskId}
+        open={editingTaskId != null}
+        onClose={() => setEditingTaskId(null)}
+      />
+
+      {/* ------------------------------------------------ quick add dialog -- */}
+      <QuickAddDialog
+        open={quickAddOpen}
+        onClose={() => setQuickAddOpen(false)}
+        defaultStartDate={quickAddStartDate}
+      />
     </>
   )
 }

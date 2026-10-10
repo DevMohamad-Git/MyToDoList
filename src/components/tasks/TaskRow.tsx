@@ -2,6 +2,7 @@ import {
   AlarmClock,
   CalendarClock,
   Copy,
+  ExternalLink,
   Link2,
   Paperclip,
   Pencil,
@@ -162,6 +163,16 @@ export function TaskRow({
           </button>
         </div>
 
+        {task.description ? (
+          <p
+            className="mt-0.5 line-clamp-1 text-xs text-muted-foreground/80 ps-4 text-start"
+            dir="auto"
+            title={task.description}
+          >
+            {task.description}
+          </p>
+        ) : null}
+
         <div className="mt-1 flex flex-wrap items-center gap-1.5 ps-4">
           {project ? (
             <Badge className="border-transparent" style={{ backgroundColor: `${project.color}20`, color: project.color }}>
@@ -216,6 +227,13 @@ export function TaskRow({
             <Badge title={t('taskDependencyTitle', { n: task.dependencies.length })}>
               <Link2 className="size-3" />
               {task.dependencies.length}
+            </Badge>
+          ) : null}
+
+          {task.links && task.links.length > 0 ? (
+            <Badge title={`${task.links.length} ${t('teLinks')}`}>
+              <ExternalLink className="size-3" />
+              {task.links.length}
             </Badge>
           ) : null}
 

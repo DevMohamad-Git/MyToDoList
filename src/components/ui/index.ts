@@ -49,3 +49,6 @@ export type { JalaliDatePickerProps } from './JalaliDatePicker'
 
 export { JalaliDateTimePicker } from './JalaliDateTimePicker'
 export type { JalaliDateTimePickerProps } from './JalaliDateTimePicker'
+
+export { JalaliTimePicker } from './JalaliTimePicker'
+export type { JalaliTimePickerProps } from './JalaliTimePicker'

@@ -12,6 +12,7 @@ import { useI18n } from '@/i18n'
 import { cn } from '@/utils/cn'
 import { toDayKey } from '@/utils/date'
 import { JalaliDatePicker } from './JalaliDatePicker'
+import { JalaliTimePicker } from './JalaliTimePicker'
 
 export interface JalaliDateTimePickerProps {
   /** Gregorian datetime-local string `yyyy-MM-ddTHH:mm`, or empty. */
@@ -58,13 +59,13 @@ export function JalaliDateTimePicker({
       onChange('')
       return
     }
-    const time = timePart || '12:00'
-    onChange(`${newDate}T${time}`)
+    onChange(timePart ? `${newDate}T${timePart}` : newDate)
   }
 
   function handleTimeChange(newTime: string) {
     if (!newTime) {
       if (datePart) onChange(datePart)
+      else onChange('')
       return
     }
     const d = datePart || toDayKey(new Date())
@@ -80,14 +81,11 @@ export function JalaliDateTimePicker({
         className="flex-1"
         placeholder="تاریخ"
       />
-      <input
-        type="time"
+      <JalaliTimePicker
+        id={id ? `${id}-time` : undefined}
         value={timePart || ''}
-        onChange={(e) => handleTimeChange(e.target.value)}
-        className={cn(
-          'h-9 w-24 shrink-0 rounded-lg border border-input bg-background px-2 text-sm text-center transition-colors',
-          'focus:border-accent focus:outline-none',
-        )}
+        onChange={handleTimeChange}
+        placeholder="ساعت"
       />
     </div>
   )

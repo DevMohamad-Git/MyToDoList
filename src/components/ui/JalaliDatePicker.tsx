@@ -19,6 +19,7 @@ import {
   toJalaliParts,
   jalaliMonthName,
   jalaliDaysInMonth,
+  toPersianDigits,
 } from '@/utils/jalali'
 import {
   setDate as jSetDate,
@@ -199,7 +200,9 @@ function JalaliCalendarInput({
   const displayValue = useMemo(() => {
     if (!value) return ''
     const parts = toJalaliParts(fromDayKey(value))
-    return `${parts.year}/${String(parts.month).padStart(2, '0')}/${String(parts.day).padStart(2, '0')}`
+    return toPersianDigits(
+      `${parts.year}/${String(parts.month).padStart(2, '0')}/${String(parts.day).padStart(2, '0')}`
+    )
   }, [value])
 
   const todayKey = toDayKey(new Date())
@@ -272,7 +275,7 @@ function JalaliCalendarInput({
               <ChevronRight className="size-4" />
             </button>
             <span className="text-sm font-semibold">
-              {jalaliMonthName(viewMonth - 1)} {viewYear}
+              {jalaliMonthName(viewMonth - 1)} {toPersianDigits(viewYear)}
             </span>
             <button
               type="button"
@@ -317,7 +320,7 @@ function JalaliCalendarInput({
                     disabled && 'opacity-30 cursor-not-allowed',
                   )}
                 >
-                  {cell.day}
+                  {toPersianDigits(cell.day)}
                 </button>
               )
             })}

@@ -1,5 +1,6 @@
 import { CLOSED_TASK_STATUSES } from '@/config/constants'
 import { PRIORITY_WEIGHT } from '@/config/constants'
+import { priorityLabel, t } from '@/i18n'
 import type { DayKey, PlanningSettings, Task, WeekDay } from '@/types'
 import { dayAtMinutes, fromDayKey, minutesIntoDay, toDayKey, toISO } from '@/utils/date'
 import { clamp } from '@/utils/math'
@@ -239,7 +240,10 @@ export function autoSchedule(options: AutoScheduleOptions): PlanProposal {
       skipped.push({
         taskId: task.id,
         title: task.title,
-        reason: `Blocked by ${blockers.length} incomplete dependency${blockers.length === 1 ? '' : 'ies'}: ${blockers.map((b) => b.title).join(', ')}`,
+        reason:
+          blockers.length === 1
+            ? t('planReasonBlocked1', { deps: blockers.map((b) => b.title).join(', ') })
+            : t('planReasonBlockedN', { n: blockers.length, deps: blockers.map((b) => b.title).join(', ') }),
       })
       continue
     }
@@ -248,7 +252,7 @@ export function autoSchedule(options: AutoScheduleOptions): PlanProposal {
       skipped.push({
         taskId: task.id,
         title: task.title,
-        reason: `Needs ${duration}m but only ${Math.max(0, budget - used)}m of the available time is left`,
+        reason: t('planReasonNoTimeLeft', { dur: duration, rem: Math.max(0, budget - used) }),
       })
       continue
     }
@@ -258,7 +262,7 @@ export function autoSchedule(options: AutoScheduleOptions): PlanProposal {
       skipped.push({
         taskId: task.id,
         title: task.title,
-        reason: `No remaining gap in working hours is long enough for ${duration}m`,
+        reason: t('planReasonNoSlotFits', { dur: duration }),
       })
       continue
     }
@@ -290,12 +294,15 @@ export function autoSchedule(options: AutoScheduleOptions): PlanProposal {
 function reasonFor(task: Task, now: Date): string {
   if (task.dueDate) {
     const days = Math.ceil((new Date(task.dueDate).getTime() - now.getTime()) / 86_400_000)
-    if (days < 0) return `Overdue by ${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'}`
-    if (days === 0) return 'Due today'
-    if (days === 1) return 'Due tomorrow'
-    if (days <= 7) return `Due in ${days} days, ${task.priority} priority`
+    if (days < 0) {
+      const absDays = Math.abs(days)
+      return absDays === 1 ? t('planReasonOverdue1') : t('planReasonOverdueN', { n: absDays })
+    }
+    if (days === 0) return t('planReasonDueToday')
+    if (days === 1) return t('planReasonDueTomorrow')
+    if (days <= 7) return t('planReasonDueInDays', { n: days, pr: priorityLabel(task.priority) })
   }
-  return `${task.priority.charAt(0).toUpperCase()}${task.priority.slice(1)} priority`
+  return t('planReasonPriority', { pr: priorityLabel(task.priority) })
 }
 
 /** Turn a proposal into task patches ready for the repository layer. */
@@ -398,14 +405,14 @@ export function buildReschedulePlans(
         fromStart: block.start,
         toStart: cursor,
         durationMinutes: duration,
-        reason: 'Moved into the next free stretch of today',
+        reason: t('planReasonMovedToday'),
       })
       cursor += duration
     }
     plans.push({
       strategy: 'compact_today',
-      label: 'Compact into today',
-      description: `Pull ${actions.length} missed task${actions.length === 1 ? '' : 's'} forward into the remaining working hours, most urgent first.`,
+      label: t('planStratCompact'),
+      description: t('planStratCompactDesc', { n: actions.length }),
       actions,
       protectedTasks: [],
     })
@@ -423,7 +430,7 @@ export function buildReschedulePlans(
         protectedTasks.push({
           taskId: block.task.id,
           title: block.task.title,
-          reason: dueToday ? 'Deadline is today' : `${block.task.priority} priority`,
+          reason: dueToday ? t('planReasonDeadlineToday') : t('planReasonPriority', { pr: priorityLabel(block.task.priority) }),
         })
         continue
       }
@@ -436,14 +443,14 @@ export function buildReschedulePlans(
         fromStart: block.start,
         toStart: cursor,
         durationMinutes: duration,
-        reason: 'Low priority and not due today',
+        reason: t('planReasonDeferLow'),
       })
       cursor += duration
     }
     plans.push({
       strategy: 'defer_low_priority',
-      label: 'Defer low priority',
-      description: `Move ${actions.length} lower-priority task${actions.length === 1 ? '' : 's'} to tomorrow and keep today's deadlines in place.`,
+      label: t('planStratDefer'),
+      description: t('planStratDeferDesc', { n: actions.length }),
       actions,
       protectedTasks,
     })
@@ -463,14 +470,14 @@ export function buildReschedulePlans(
         fromStart: block.start,
         toStart: cursor,
         durationMinutes: duration,
-        reason: 'Rolled over to tomorrow',
+        reason: t('planReasonRolledOver'),
       })
       cursor += duration
     }
     plans.push({
       strategy: 'push_to_tomorrow',
-      label: 'Push to tomorrow',
-      description: `Roll all ${actions.length} missed task${actions.length === 1 ? '' : 's'} into tomorrow, ordered by urgency.`,
+      label: t('planStratPush'),
+      description: t('planStratPushDesc', { n: actions.length }),
       actions,
       protectedTasks: [],
     })

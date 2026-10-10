@@ -39,16 +39,33 @@ export function formatJalali(
   return jFormat(d, normalizedPattern, { locale: faIR })
 }
 
+/** Convert ASCII digits (0-9) to Persian digits (۰-۹). */
+export function toPersianDigits(value: number | string): string {
+  const digits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹']
+  return String(value).replace(/\d/g, (d) => digits[Number(d)] ?? d)
+}
+
+/** Convert Persian digits (۰-۹) or Arabic-Indic digits (٠-٩) to ASCII digits (0-9). */
+export function fromPersianDigits(value: string): string {
+  const map: Record<string, string> = {
+    '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
+    '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9',
+    '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
+    '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9',
+  }
+  return value.replace(/[۰-۹٠-٩]/g, (d) => map[d] ?? d)
+}
+
 /** Jalali day label: e.g. "شنبه ۱۵ مهر" */
 export function formatJalaliDayLabel(day: string): string {
   const [y, m, d] = day.split('-').map(Number)
   const date = new Date(y, (m ?? 1) - 1, d ?? 1, 0, 0, 0, 0)
-  return jFormat(date, 'EEE d MMMM', { locale: faIR })
+  return toPersianDigits(jFormat(date, 'EEE d MMMM', { locale: faIR }))
 }
 
 /** Jalali date for display: `yyyy/MM/dd` */
 export function toJalaliDisplay(date: Date): string {
-  return jFormat(date, 'yyyy/MM/dd', { locale: faIR })
+  return toPersianDigits(jFormat(date, 'yyyy/MM/dd', { locale: faIR }))
 }
 
 /** Get Jalali year, month (1-based), day of a Gregorian Date */
@@ -101,7 +118,7 @@ export function jalaliMonthName(monthIndex: number): string {
 /** "مهر ۱۴۰۵" */
 export function jalaliMonthYearLabel(date: Date): string {
   const parts = toJalaliParts(date)
-  return `${jalaliMonthName(parts.month - 1)} ${parts.year}`
+  return `${jalaliMonthName(parts.month - 1)} ${toPersianDigits(parts.year)}`
 }
 
 /** Number of days in a Jalali month (1-based month). */

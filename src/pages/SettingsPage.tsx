@@ -19,6 +19,7 @@ import {
   ConfirmDialog,
   Field,
   Input,
+  JalaliTimePicker,
   PageHeader,
   SegmentedControl,
   Select,
@@ -186,23 +187,23 @@ export function SettingsPage() {
           <CardBody className="flex flex-col gap-4">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Field label={t('setWorkStarts')}>
-                <Input
-                  type="time"
+                <JalaliTimePicker
+                  className="w-full"
                   value={minutesToTime(workspace.settings.planning.workingHours.start)}
-                  onChange={(e) =>
+                  onChange={(v) =>
                     void patchSettings({
-                      planning: { workingHours: { start: timeToMinutes(e.target.value) } },
+                      planning: { workingHours: { start: timeToMinutes(v) } },
                     })
                   }
                 />
               </Field>
               <Field label={t('setWorkEnds')}>
-                <Input
-                  type="time"
+                <JalaliTimePicker
+                  className="w-full"
                   value={minutesToTime(workspace.settings.planning.workingHours.end)}
-                  onChange={(e) =>
+                  onChange={(v) =>
                     void patchSettings({
-                      planning: { workingHours: { end: timeToMinutes(e.target.value) } },
+                      planning: { workingHours: { end: timeToMinutes(v) } },
                     })
                   }
                 />

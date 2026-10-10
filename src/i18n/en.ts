@@ -549,6 +549,19 @@ export const en = {
   planReasonDeferLow: 'Low priority and not due today',
   planReasonRolledOver: 'Rolled over to tomorrow',
   planReasonDeadlineToday: 'Deadline is today',
+  plannerClickToSchedule: 'Click to schedule a new task',
+  plannerAddAtTime: 'Add task',
+  plannerBuffer: 'Buffer',
+  plannerBufferNone: 'No buffer',
+  plannerBuffer5: '5m',
+  plannerBuffer10: '10m',
+  plannerBuffer15: '15m',
+  plannerSearchBacklog: 'Search backlog…',
+  plannerFilterAll: 'All',
+  plannerFilterCritical: 'Critical',
+  plannerFilterHigh: 'High',
+  plannerClickToEdit: 'Click to view or edit',
+  plannerCurrentTime: 'Now',
 } as const
 
 export type TranslationKey = keyof typeof en

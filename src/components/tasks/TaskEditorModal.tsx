@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Plus, Trash2, X } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { Download, ExternalLink, Paperclip, Plus, Trash2, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Badge,
   Button,
@@ -18,15 +18,18 @@ import {
   Textarea,
   toast,
 } from '@/components/ui'
+import { MAX_INLINE_ATTACHMENT_BYTES, MAX_TASK_ATTACHMENTS_TOTAL_BYTES } from '@/config/constants'
 import { createRecurrence } from '@/database/factories'
 import { priorityLabel, taskStatusLabel, useI18n, useT } from '@/i18n'
 import { describeRecurrence, upcomingOccurrences } from '@/services/recurrence'
+import { attachmentRepo } from '@/storage/attachmentRepo'
 import { goalRepo } from '@/storage/goalRepo'
 import { projectRepo } from '@/storage/projectRepo'
 import { taskRepo } from '@/storage/taskRepo'
 import { timeRepo } from '@/storage/timeRepo'
 import { useWorkspaceId } from '@/stores/workspace'
 import type {
+  Attachment,
   ID,
   Priority,
   Recurrence,
@@ -38,6 +41,7 @@ import type {
 } from '@/types'
 import { PRIORITIES, TASK_STATUSES } from '@/types'
 import {
+  formatBytes,
   formatDate,
   formatDuration,
   fromDateInput,
@@ -55,7 +59,7 @@ import { newId } from '@/utils/id'
  * Save, so an abandoned edit leaves the record untouched.
  */
 
-type Tab = 'details' | 'schedule' | 'links' | 'time'
+type Tab = 'details' | 'schedule' | 'links' | 'attachments' | 'time'
 
 export function TaskEditorModal({
   taskId,
@@ -76,6 +80,8 @@ export function TaskEditorModal({
     useLiveQuery(() => (taskId ? taskRepo.subtasks(workspaceId, taskId) : []), [workspaceId, taskId]) ?? []
   const timeEntries =
     useLiveQuery(() => (taskId ? timeRepo.forTask(taskId) : []), [taskId]) ?? []
+  const attachments =
+    useLiveQuery(() => (taskId ? attachmentRepo.forTask(taskId) : []), [taskId]) ?? []
   const siblings =
     useLiveQuery(
       () => taskRepo.list(workspaceId, { status: ['inbox', 'planned', 'in_progress', 'blocked'] }),
@@ -86,6 +92,7 @@ export function TaskEditorModal({
   const [draft, setDraft] = useState<Task | null>(null)
   const [busy, setBusy] = useState(false)
   const [newSubtask, setNewSubtask] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const recurrenceFrequencies: { value: RecurrenceFrequency; label: string }[] = useMemo(
     () => [
@@ -205,6 +212,89 @@ export function TaskEditorModal({
     setNewSubtask('')
   }
 
+  async function openAttachment(att: Attachment) {
+    const res = await attachmentRepo.previewUrl(att)
+    if (!res.ok) {
+      toast.error(res.error)
+      return
+    }
+    const win = window.open(res.url, '_blank')
+    if (!win) {
+      toast.error(t('toastPopupBlocked'))
+    }
+    setTimeout(() => {
+      URL.revokeObjectURL(res.url)
+    }, 60_000)
+  }
+
+  async function downloadAttachment(att: Attachment) {
+    const res = await attachmentRepo.previewUrl(att)
+    if (!res.ok) {
+      toast.error(res.error)
+      return
+    }
+    const a = document.createElement('a')
+    a.href = res.url
+    a.download = att.filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(res.url)
+  }
+
+  async function deleteAttachment(att: Attachment) {
+    const res = await attachmentRepo.remove(att.id)
+    if (!res.ok) {
+      toast.error(res.error)
+      return
+    }
+    toast.success(t('toastAttachmentDeleted'))
+  }
+
+  async function handleUploadFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const selectedFiles = Array.from(e.target.files ?? [])
+    if (selectedFiles.length === 0 || !taskId) return
+
+    const currentTotal = attachments.reduce((acc, a) => acc + a.size, 0)
+    let runningTotal = currentTotal
+    const validFiles: File[] = []
+
+    for (const file of selectedFiles) {
+      if (file.size > MAX_INLINE_ATTACHMENT_BYTES) {
+        toast.error(
+          t('errFileTooLarge', {
+            name: file.name,
+            max: formatBytes(MAX_INLINE_ATTACHMENT_BYTES),
+          }),
+        )
+        continue
+      }
+      if (runningTotal + file.size > MAX_TASK_ATTACHMENTS_TOTAL_BYTES) {
+        toast.error(
+          t('errTaskAttachmentsCap', {
+            max: formatBytes(MAX_TASK_ATTACHMENTS_TOTAL_BYTES),
+          }),
+        )
+        break
+      }
+      runningTotal += file.size
+      validFiles.push(file)
+    }
+
+    if (validFiles.length > 0) {
+      const { errors } = await attachmentRepo.addMany(workspaceId, { taskId }, validFiles)
+      if (errors.length > 0) {
+        toast.error(errors.join('\n'))
+      } else {
+        toast.success(t('toastAttachmentAdded'))
+      }
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
   const tagsValue = draft.tags.join(', ')
 
   return (
@@ -233,6 +323,7 @@ export function TaskEditorModal({
           { value: 'details', label: t('teTabDetails') },
           { value: 'schedule', label: t('teTabSchedule') },
           { value: 'links', label: t('teTabLinks'), count: subtasks.length || undefined },
+          { value: 'attachments', label: t('taskAttachments'), count: attachments.length || undefined },
           { value: 'time', label: t('teTabTime'), count: timeEntries.length || undefined },
         ]}
       />
@@ -618,6 +709,17 @@ export function TaskEditorModal({
                     patch('links', next)
                   }}
                 />
+                {link.url ? (
+                  <a
+                    href={link.url.startsWith('http') ? link.url : `https://${link.url}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-input text-muted-foreground hover:bg-muted hover:text-accent transition-colors"
+                    title={link.url}
+                  >
+                    <ExternalLink className="size-3.5" />
+                  </a>
+                ) : null}
                 <IconButton
                   label={t('teRemoveLink')}
                   onClick={() => patch('links', draft.links.filter((l) => l.id !== link.id))}
@@ -636,6 +738,85 @@ export function TaskEditorModal({
               <Plus className="size-3.5" />
               {t('teAddLink')}
             </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {tab === 'attachments' ? (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase">
+                {t('taskAttachments')}
+              </h3>
+              <p className="text-[11px] text-muted-foreground" dir="ltr">
+                {formatBytes(attachments.reduce((acc, a) => acc + a.size, 0))} / {formatBytes(MAX_TASK_ATTACHMENTS_TOTAL_BYTES)}
+              </p>
+            </div>
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={handleUploadFiles}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                className="gap-1.5"
+              >
+                <Paperclip className="size-3.5" />
+                {t('taskAddAttachment')}
+              </Button>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border">
+            {attachments.length === 0 ? (
+              <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+                {t('teNoAttachments')}
+              </p>
+            ) : (
+              attachments.map((att) => (
+                <div
+                  key={att.id}
+                  className="flex items-center gap-2 border-b border-border px-3 py-2.5 last:border-b-0"
+                >
+                  <Paperclip className="size-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-foreground" title={att.filename}>
+                      {att.filename}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground" dir="ltr">
+                      {formatBytes(att.size)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <IconButton
+                      label={t('taskOpenAttachment')}
+                      onClick={() => void openAttachment(att)}
+                    >
+                      <ExternalLink className="size-3.5" />
+                    </IconButton>
+                    <IconButton
+                      label={t('taskDownloadAttachment')}
+                      onClick={() => void downloadAttachment(att)}
+                    >
+                      <Download className="size-3.5" />
+                    </IconButton>
+                    <IconButton
+                      label={t('cDelete')}
+                      className="hover:text-rose-400"
+                      onClick={() => void deleteAttachment(att)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </IconButton>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       ) : null}

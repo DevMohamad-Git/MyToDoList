@@ -23,7 +23,11 @@ import {
   jalaliMonthRange,
   jalaliWeekRange,
   toJalaliParts,
+  toPersianDigits,
+  fromPersianDigits,
 } from './jalali'
+
+export { toPersianDigits, fromPersianDigits }
 
 /* ----------------------------------------------------------- internal helpers */
 
@@ -216,6 +220,9 @@ export function toDateTimeInput(value: ISODateTime | null): string {
 
 export function fromDateTimeInput(value: string): ISODateTime | null {
   if (!value) return null
+  if (!value.includes('T')) {
+    return fromDateInput(value)
+  }
   const d = new Date(value)
   return Number.isNaN(d.getTime()) ? null : d.toISOString()
 }
@@ -240,7 +247,9 @@ export function fromDateInput(value: string): ISODateTime | null {
 export function toJalaliDateDisplay(day: DayKey): string {
   const date = fromDayKey(day)
   const parts = toJalaliParts(date)
-  return `${parts.year}/${String(parts.month).padStart(2, '0')}/${String(parts.day).padStart(2, '0')}`
+  return toPersianDigits(
+    `${parts.year}/${String(parts.month).padStart(2, '0')}/${String(parts.day).padStart(2, '0')}`
+  )
 }
 
 /**
