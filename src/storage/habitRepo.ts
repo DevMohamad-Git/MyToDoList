@@ -116,4 +116,33 @@ export const habitRepo = {
       }
     })
   },
+
+  async setEntryNote(workspaceId: ID, habitId: ID, day: DayKey, note: string): Promise<void> {
+    const existing = await habitRepo.entryFor(habitId, day)
+    if (existing) {
+      await db.habitEntries.update(existing.id, { note })
+    } else {
+      await db.habitEntries.add({
+        id: newId(),
+        workspaceId,
+        habitId,
+        day,
+        count: 0,
+        note,
+        createdAt: nowISO(),
+      })
+    }
+  },
+
+  async move(workspaceId: ID, habitId: ID, direction: 'up' | 'down'): Promise<void> {
+    const all = await habitRepo.list(workspaceId, true)
+    const index = all.findIndex((h) => h.id === habitId)
+    if (index === -1) return
+    const targetIndex = direction === 'up' ? index - 1 : index + 1
+    if (targetIndex < 0 || targetIndex >= all.length) return
+    const reordered = [...all]
+    const [moved] = reordered.splice(index, 1)
+    reordered.splice(targetIndex, 0, moved)
+    await habitRepo.reorder(reordered.map((h) => h.id))
+  },
 }

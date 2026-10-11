@@ -128,6 +128,7 @@ export function createHabit(workspaceId: ID, input: Partial<Habit> = {}): Habit 
     description: '',
     frequency: 'daily',
     target: 1,
+    unit: '',
     weekDays: [],
     color: pickColor(Date.now() + 2),
     icon: 'repeat',

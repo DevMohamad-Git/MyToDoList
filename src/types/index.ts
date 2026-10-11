@@ -311,6 +311,8 @@ export interface Habit {
   frequency: HabitFrequency
   /** Completions targeted per period (per day for daily, per week for weekly). */
   target: number
+  /** Optional unit label (e.g. 'pages', 'glasses', 'mins', 'km'). */
+  unit?: string
   /** For `custom` frequency: the weekdays the habit is due. */
   weekDays: WeekDay[]
   color: string

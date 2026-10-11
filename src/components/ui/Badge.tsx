@@ -69,11 +69,21 @@ export function TagBadge({ tag, className }: { tag: string; className?: string }
 }
 
 /** Small coloured swatch for a project/goal/habit colour. */
-export function ColorDot({ color, className }: { color: string; className?: string }) {
+export function ColorDot({
+  color,
+  size = 'md',
+  className,
+}: {
+  color: string
+  size?: 'sm' | 'md' | 'lg'
+  className?: string
+}) {
+  const sizeClass = size === 'sm' ? 'size-2' : size === 'lg' ? 'size-3' : 'size-2.5'
   return (
     <span
-      className={cn('inline-block size-2.5 shrink-0 rounded-full', className)}
+      className={cn('inline-block shrink-0 rounded-full', sizeClass, className)}
       style={{ backgroundColor: color }}
     />
   )
 }
+

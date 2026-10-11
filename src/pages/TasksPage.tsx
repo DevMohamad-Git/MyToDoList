@@ -56,11 +56,11 @@ export function TasksPage() {
   const [editingId, setEditingId] = useState<ID | null>(null)
   const [deleting, setDeleting] = useState<Task | null>(null)
 
-  // Deep link: /tasks?filter=overdue opens the overdue view directly.
+  // Deep link: /tasks?filter=inbox or /tasks?filter=overdue opens the requested view directly.
   useEffect(() => {
-    const requested = searchParams.get('filter')
-    if (requested === 'overdue') {
-      setStatusView('overdue')
+    const requested = searchParams.get('filter') as StatusView | null
+    if (requested && ['open', 'today', 'overdue', 'inbox', 'completed', 'all'].includes(requested)) {
+      setStatusView(requested)
       setSearchParams({}, { replace: true })
     }
   }, [searchParams, setSearchParams])

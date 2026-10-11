@@ -20,7 +20,10 @@ import { QuickAddDialog } from '@/components/tasks/QuickAddDialog'
 import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher'
 import { Button } from '@/components/ui'
 import { useT, type TranslationKey } from '@/i18n'
+import { getPhaseMinutes, useFocusStore } from '@/stores/focusStore'
+import { useSettings, useWorkspaceId } from '@/stores/workspace'
 import { cn } from '@/utils/cn'
+import { formatTimer } from '@/utils/date'
 
 const NAV: { to: string; label: TranslationKey; icon: typeof LayoutDashboard; end?: boolean }[] = [
   { to: '/', label: 'navDashboard', icon: LayoutDashboard, end: true },
@@ -47,6 +50,23 @@ export function AppShell() {
   const [navOpen, setNavOpen] = useState(false)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const location = useLocation()
+  const workspaceId = useWorkspaceId()
+  const settings = useSettings()
+
+  // Background focus timer status & shell-level context synchronization
+  const focusRunning = useFocusStore((s) => s.running)
+  const focusElapsed = useFocusStore((s) => s.elapsedSeconds)
+  const focusMode = useFocusStore((s) => s.mode)
+  const focusPhase = useFocusStore((s) => s.phase)
+  const focusCountdown = useFocusStore((s) => s.countdownMinutes)
+  const syncContext = useFocusStore((s) => s.syncContext)
+
+  useEffect(() => {
+    syncContext(workspaceId, settings)
+  }, [workspaceId, settings, syncContext])
+
+  const focusTotal = getPhaseMinutes(focusMode, focusPhase, focusCountdown, settings.pomodoro) * 60
+  const focusRemaining = focusMode === 'stopwatch' ? focusElapsed : Math.max(0, focusTotal - focusElapsed)
 
   // Close the mobile drawer whenever the route changes.
   useEffect(() => setNavOpen(false), [location.pathname])
@@ -127,7 +147,13 @@ export function AppShell() {
               }
             >
               <item.icon className="size-4 shrink-0" />
-              {t(item.label)}
+              <span>{t(item.label)}</span>
+              {item.to === '/focus' && focusRunning ? (
+                <span className="ms-auto flex items-center gap-1.5 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-accent">
+                  <span className="size-1.5 rounded-full bg-accent animate-ping" />
+                  {formatTimer(focusRemaining)}
+                </span>
+              ) : null}
             </NavLink>
           ))}
         </nav>
