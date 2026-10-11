@@ -442,9 +442,23 @@ export function projectStatsMap(
     if (!entry.projectId) continue
     minutesByProject.set(entry.projectId, (minutesByProject.get(entry.projectId) ?? 0) + entry.duration)
   }
+
+  // Pre-group tasks by projectId in O(T)
+  const tasksByProject = new Map<ID, Task[]>()
+  for (const task of snapshot.tasks) {
+    if (!task.projectId || task.archived) continue
+    let list = tasksByProject.get(task.projectId)
+    if (!list) {
+      list = []
+      tasksByProject.set(task.projectId, list)
+    }
+    list.push(task)
+  }
+
   const map = new Map<ID, ProjectStats>()
   for (const project of snapshot.projects) {
-    map.set(project.id, projectStats(project, snapshot.tasks, minutesByProject.get(project.id) ?? 0, now))
+    const ownTasks = tasksByProject.get(project.id) ?? []
+    map.set(project.id, projectStats(project, ownTasks, minutesByProject.get(project.id) ?? 0, now))
   }
   return map
 }

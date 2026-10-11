@@ -92,8 +92,9 @@ export function projectStats(
       ? 0
       : countable.reduce((acc, t) => acc + taskProgress(t, own, own), 0) / countable.length
 
-  const totalMilestones = project.milestones.length
-  const completedMilestones = project.milestones.filter((m) => m.completed).length
+  const milestones = Array.isArray(project.milestones) ? project.milestones : []
+  const totalMilestones = milestones.length
+  const completedMilestones = milestones.filter((m) => m.completed).length
   const milestoneProgress = totalMilestones === 0 ? 0 : toPercent(ratio(completedMilestones, totalMilestones) * 100)
 
   let progress: number
@@ -172,7 +173,11 @@ export function projectHealth(
   }
 
   const deadline = new Date(project.deadline).getTime()
-  const start = project.startDate ? new Date(project.startDate).getTime() : new Date(project.createdAt).getTime()
+  const start = project.startDate
+    ? new Date(project.startDate).getTime()
+    : project.createdAt
+      ? new Date(project.createdAt).getTime()
+      : now.getTime()
   const span = deadline - start
   if (span <= 0) return now.getTime() > deadline && progress < 100 ? 'off_track' : 'on_track'
 

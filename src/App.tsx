@@ -2,6 +2,7 @@ import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from '@/components/layout/AppShell'
+import { ErrorBoundary } from '@/components/layout/ErrorBoundary'
 import { Button, Card, Toaster } from '@/components/ui'
 import { useI18n } from '@/i18n'
 import { requestPersistentStorage } from '@/database/db'
@@ -49,23 +50,25 @@ export function App() {
 
   return (
     <BrowserRouter>
-      <Routes>
-        <Route element={<AppShell />}>
-          <Route index element={<DashboardPage />} />
-          <Route path="tasks" element={<TasksPage />} />
-          <Route path="planner" element={<PlannerPage />} />
-          <Route path="projects" element={<ProjectsPage />} />
-          <Route path="projects/:projectId" element={<ProjectDetailPage />} />
-          <Route path="goals" element={<GoalsPage />} />
-          <Route path="habits" element={<HabitsPage />} />
-          <Route path="focus" element={<FocusPage />} />
-          <Route path="analytics" element={<AnalyticsPage />} />
-          <Route path="reviews" element={<ReviewsPage />} />
-          <Route path="achievements" element={<AchievementsPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
+      <ErrorBoundary fallbackTitle="خطایی در بارگذاری این صفحه رخ داده است">
+        <Routes>
+          <Route element={<AppShell />}>
+            <Route index element={<DashboardPage />} />
+            <Route path="tasks" element={<TasksPage />} />
+            <Route path="planner" element={<PlannerPage />} />
+            <Route path="projects" element={<ProjectsPage />} />
+            <Route path="projects/:projectId" element={<ProjectDetailPage />} />
+            <Route path="goals" element={<GoalsPage />} />
+            <Route path="habits" element={<HabitsPage />} />
+            <Route path="focus" element={<FocusPage />} />
+            <Route path="analytics" element={<AnalyticsPage />} />
+            <Route path="reviews" element={<ReviewsPage />} />
+            <Route path="achievements" element={<AchievementsPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </ErrorBoundary>
       <Toaster />
     </BrowserRouter>
   )

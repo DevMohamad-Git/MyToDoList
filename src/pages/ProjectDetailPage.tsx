@@ -4,8 +4,13 @@ import {
   CalendarClock,
   CheckCircle2,
   Circle,
+  Copy,
+  Download,
   Flag,
   Plus,
+  Search,
+  Share2,
+  Target,
   Trash2,
   X,
 } from 'lucide-react'
@@ -27,6 +32,7 @@ import {
   Input,
   JalaliDatePicker,
   LoadingState,
+  Menu,
   Modal,
   OptionSelect,
   PageHeader,
@@ -40,10 +46,9 @@ import {
 } from '@/components/ui'
 import {
   ENTITY_COLORS,
-  PRIORITY_LABEL,
   PROJECT_STATUS_CLASS,
-  PROJECT_STATUS_LABEL,
 } from '@/config/constants'
+import { db } from '@/database/db'
 import { projectStats } from '@/services/progress'
 import { projectRepo } from '@/storage/projectRepo'
 import { taskRepo } from '@/storage/taskRepo'
@@ -60,6 +65,8 @@ import {
 } from '@/types'
 import { formatDate, formatDuration, fromDateInput } from '@/utils/date'
 import { newId } from '@/utils/id'
+import { copyProjectSummary, downloadProjectSummary } from '@/utils/exportProject'
+import { priorityLabel, projectStatusLabel, useT } from '@/i18n'
 
 /**
  * One project: its numbers, milestones and task list on a single surface.
@@ -67,6 +74,7 @@ import { newId } from '@/utils/id'
  * drift from the tasks it summarises.
  */
 export function ProjectDetailPage() {
+  const t = useT()
   const { projectId } = useParams<{ projectId: ID }>()
   const workspaceId = useWorkspaceId()
   const navigate = useNavigate()
@@ -75,10 +83,15 @@ export function ProjectDetailPage() {
   const [editingId, setEditingId] = useState<ID | null>(null)
   const [deleting, setDeleting] = useState<Task | null>(null)
   const [editOpen, setEditOpen] = useState(false)
+
+  // Milestones input state
   const [milestoneTitle, setMilestoneTitle] = useState('')
+  const [milestoneDueDate, setMilestoneDueDate] = useState('')
+
+  // Task search state
+  const [taskSearch, setTaskSearch] = useState('')
 
   const project = useLiveQuery(
-    // `undefined` = read in flight, `null` = the id does not exist, object = found.
     async () => (projectId ? ((await projectRepo.get(projectId)) ?? null) : null),
     [projectId],
   )
@@ -96,30 +109,50 @@ export function ProjectDetailPage() {
     [projectId],
   )
 
+  // Linked goals query
+  const goals = useLiveQuery(
+    () => db.goals.where('workspaceId').equals(workspaceId).toArray(),
+    [workspaceId],
+  ) ?? []
+
+  const linkedGoals = useMemo(
+    () =>
+      projectId
+        ? goals.filter((g) => Array.isArray(g.linkedProjectIds) && g.linkedProjectIds.includes(projectId))
+        : [],
+    [goals, projectId],
+  )
+
   const stats = useMemo(
     () => (project ? projectStats(project, tasks, minutes ?? 0) : null),
     [project, tasks, minutes],
   )
 
   const [taskView, setTaskView] = useState<'open' | 'all'>('open')
-  const visibleTasks = useMemo(
-    () =>
+  const visibleTasks = useMemo(() => {
+    let list =
       taskView === 'open'
         ? tasks.filter((t) => t.status !== 'completed' && t.status !== 'cancelled')
-        : tasks,
-    [tasks, taskView],
-  )
+        : tasks
+
+    if (taskSearch.trim()) {
+      const q = taskSearch.trim().toLowerCase()
+      list = list.filter((t) => t.title.toLowerCase().includes(q) || t.notes?.toLowerCase().includes(q))
+    }
+
+    return list
+  }, [tasks, taskView, taskSearch])
 
   if (!projectId) return null
-  if (project === undefined) return <LoadingState label="Loading project…" />
+  if (project === undefined) return <LoadingState label={t('projectDetailLoading')} />
   if (project === null) {
     return (
       <EmptyState
-        title="Project not found"
-        description="It may have been deleted."
+        title={t('projectDetailNotFound')}
+        description={t('projectDetailNotFoundDesc')}
         action={
           <Link to="/projects">
-            <Button variant="outline">Back to projects</Button>
+            <Button variant="outline">{t('projectDetailBackBtn')}</Button>
           </Link>
         }
       />
@@ -128,41 +161,46 @@ export function ProjectDetailPage() {
 
   async function toggle(task: Task) {
     const next = await taskRepo.toggleComplete(task.id)
-    if (next?.status === 'completed') toast.success(`Completed “${next.title}”`)
+    if (next?.status === 'completed') toast.success(t('toastCompleted', { title: next.title }))
   }
 
   async function confirmDelete() {
     if (!deleting) return
     await taskRepo.remove(deleting.id)
-    toast.success('Task deleted')
+    toast.success(t('projectDetailTaskDeleted'))
     setDeleting(null)
   }
 
   async function addMilestone() {
     if (!milestoneTitle.trim() || !project) return
+    const milestonesList = Array.isArray(project.milestones) ? project.milestones : []
     await projectRepo.setMilestones(project.id, [
-      ...project.milestones,
+      ...milestonesList,
       {
         id: newId(),
         title: milestoneTitle.trim(),
         completed: false,
-        dueDate: null,
+        dueDate: milestoneDueDate ? new Date(`${milestoneDueDate}T12:00:00`).toISOString() : null,
         completedAt: null,
-        order: project.milestones.length,
+        order: milestonesList.length,
       },
     ])
     setMilestoneTitle('')
+    setMilestoneDueDate('')
+    toast.success(t('projectDetailMilestoneAdded'))
   }
+
+  const milestonesList = Array.isArray(project.milestones) ? project.milestones : []
 
   return (
     <>
       <div className="mb-4">
         <Link
           to="/projects"
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-accent"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-accent transition-colors"
         >
-          <ArrowLeft className="size-3" />
-          All projects
+          <ArrowLeft className="size-3 rtl:rotate-180" />
+          {t('projectDetailBack')}
         </Link>
       </div>
 
@@ -175,96 +213,185 @@ export function ProjectDetailPage() {
         }
         description={project.description || undefined}
         actions={
-          <>
+          <div className="flex items-center gap-2">
+            <Menu
+              trigger={
+                <Button variant="outline" size="sm" className="gap-1.5">
+                  <Share2 className="size-3.5" />
+                  {t('projectDetailExport')}
+                </Button>
+              }
+              items={[
+                {
+                  label: t('projectsCopyReport'),
+                  icon: <Copy className="size-3.5" />,
+                  onSelect: () => void copyProjectSummary(project, stats ?? undefined, tasks),
+                },
+                {
+                  label: t('projectsDownloadReport'),
+                  icon: <Download className="size-3.5" />,
+                  onSelect: () => downloadProjectSummary(project, stats ?? undefined, tasks),
+                },
+              ]}
+            />
             <Button variant="outline" onClick={() => setEditOpen(true)}>
-              Edit
+              {t('projectDetailEdit')}
             </Button>
             <Button variant="primary" onClick={() => setQuickAddOpen(true)}>
               <Plus className="size-4" />
-              Add task
+              {t('projectDetailAddTask')}
             </Button>
-          </>
+          </div>
         }
       >
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <Badge className={PROJECT_STATUS_CLASS[project.status]}>
-            {PROJECT_STATUS_LABEL[project.status]}
+            {projectStatusLabel(project.status)}
           </Badge>
           <PriorityBadge priority={project.priority} />
           {project.deadline ? (
             <Badge>
               <CalendarClock className="size-3" />
-              Due {formatDate(project.deadline)}
+              {t('projectsDue', { date: formatDate(project.deadline) })}
             </Badge>
           ) : null}
         </div>
       </PageHeader>
 
+      {/* Linked Goals Banner */}
+      {linkedGoals.length > 0 ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-card/70 p-3 text-xs">
+          <span className="flex items-center gap-1.5 font-medium text-foreground">
+            <Target className="size-3.5 text-accent" />
+            {linkedGoals.length > 1 ? t('projectDetailLinkedGoals') : t('projectDetailLinkedGoal')}
+          </span>
+          {linkedGoals.map((g) => (
+            <Link
+              key={g.id}
+              to="/goals"
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground hover:border-accent hover:text-accent transition-colors"
+            >
+              <span className="size-2 rounded-full" style={{ backgroundColor: g.color }} />
+              <span className="font-medium">{g.title}</span>
+            </Link>
+          ))}
+        </div>
+      ) : null}
+
       {stats ? (
         <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <StatTile
-            label="Progress"
-            value={`${Math.round(stats.progress)}%`}
+            label={t('projectDetailStatProgress')}
+            value={<span dir="ltr">{`${Math.round(stats.progress)}%`}</span>}
             tone="accent"
             hint={
               stats.totalMilestones > 0
-                ? `${stats.completedMilestones}/${stats.totalMilestones} milestones`
-                : 'From tasks'
+                ? t('projectDetailStatProgressMilestones', {
+                    done: stats.completedMilestones,
+                    total: stats.totalMilestones,
+                  })
+                : t('projectDetailStatProgressFromTasks')
             }
           />
-          <StatTile label="Open tasks" value={stats.openTasks} hint={`${stats.totalTasks} total`} />
           <StatTile
-            label="Overdue"
-            value={stats.overdueTasks}
+            label={t('projectDetailStatOpenTasks')}
+            value={<span dir="ltr">{stats.openTasks}</span>}
+            hint={t('projectDetailStatTotalTasks', { total: stats.totalTasks })}
+          />
+          <StatTile
+            label={t('projectDetailStatOverdue')}
+            value={<span dir="ltr">{stats.overdueTasks}</span>}
             tone={stats.overdueTasks > 0 ? 'danger' : 'default'}
-            hint={stats.blockedTasks > 0 ? `${stats.blockedTasks} blocked` : 'Nothing late'}
+            hint={
+              stats.blockedTasks > 0
+                ? t('projectDetailStatBlocked', { n: stats.blockedTasks })
+                : t('projectDetailStatNothingLate')
+            }
           />
           <StatTile
-            label="Remaining estimate"
+            label={t('projectDetailStatRemaining')}
             value={formatDuration(stats.remainingEstimateMinutes)}
-            hint={`${formatDuration(stats.estimatedMinutes)} estimated total`}
+            hint={t('projectDetailStatTotalEstimate', {
+              total: formatDuration(stats.estimatedMinutes),
+            })}
           />
           <StatTile
-            label="Tracked time"
+            label={t('projectDetailStatTracked')}
             value={formatDuration(minutes ?? 0)}
             hint={
               stats.estimateAccuracy != null
-                ? `${Math.round(stats.estimateAccuracy * 100)}% of estimate`
-                : 'No comparison yet'
+                ? t('projectDetailStatAccuracy', {
+                    p: Math.round(stats.estimateAccuracy * 100),
+                  })
+                : t('projectDetailStatNoAccuracy')
             }
           />
         </div>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
+      <div className="grid gap-4 xl:grid-cols-[1fr_340px]">
         {/* ---------------------------------------------------------- tasks -- */}
         <Card>
           <CardHeader
-            title="Tasks"
-            description={`${visibleTasks.length} shown`}
+            title={t('projectDetailTasksTitle')}
+            description={t('projectDetailTasksShown', { n: visibleTasks.length })}
             icon={<Flag className="size-4" />}
             actions={
-              <SegmentedControl
-                value={taskView}
-                options={[
-                  { value: 'open', label: 'Open' },
-                  { value: 'all', label: 'All' },
-                ]}
-                onChange={setTaskView}
-              />
+              <div className="flex items-center gap-2">
+                <div className="relative w-36 sm:w-48">
+                  <Search className="pointer-events-none absolute start-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={taskSearch}
+                    onChange={(e) => setTaskSearch(e.target.value)}
+                    placeholder={t('projectDetailTasksSearchPlaceholder')}
+                    className="h-7 ps-7 pe-6 text-xs"
+                  />
+                  {taskSearch ? (
+                    <button
+                      type="button"
+                      onClick={() => setTaskSearch('')}
+                      className="absolute end-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  ) : null}
+                </div>
+                <SegmentedControl
+                  value={taskView}
+                  options={[
+                    { value: 'open', label: t('projectDetailTasksViewOpen') },
+                    { value: 'all', label: t('projectDetailTasksViewAll') },
+                  ]}
+                  onChange={setTaskView}
+                />
+              </div>
             }
           />
           {visibleTasks.length === 0 ? (
             <CardBody>
               <EmptyState
                 icon={<Flag className="size-6" />}
-                title="No tasks here"
-                description="Add the first task for this project."
+                title={
+                  taskSearch
+                    ? t('projectDetailTasksEmptySearch')
+                    : t('projectDetailTasksEmptyDefault')
+                }
+                description={
+                  taskSearch
+                    ? t('projectDetailTasksEmptySearchDesc')
+                    : t('projectDetailTasksEmptyDefaultDesc')
+                }
                 action={
-                  <Button variant="primary" onClick={() => setQuickAddOpen(true)}>
-                    <Plus className="size-4" />
-                    Add task
-                  </Button>
+                  taskSearch ? (
+                    <Button variant="outline" size="sm" onClick={() => setTaskSearch('')}>
+                      {t('projectDetailClearSearch')}
+                    </Button>
+                  ) : (
+                    <Button variant="primary" onClick={() => setQuickAddOpen(true)}>
+                      <Plus className="size-4" />
+                      {t('projectDetailAddTask')}
+                    </Button>
+                  )
                 }
               />
             </CardBody>
@@ -288,69 +415,112 @@ export function ProjectDetailPage() {
         {/* ----------------------------------------------------- milestones -- */}
         <Card>
           <CardHeader
-            title="Milestones"
+            title={t('projectDetailMilestonesTitle')}
             description={
-              project.milestones.length === 0
-                ? 'None yet'
-                : `${project.milestones.filter((m) => m.completed).length}/${project.milestones.length} done`
+              milestonesList.length === 0
+                ? t('projectDetailMilestonesNone')
+                : t('projectDetailMilestonesDone', {
+                    done: milestonesList.filter((m) => m.completed).length,
+                    total: milestonesList.length,
+                  })
             }
             icon={<CheckCircle2 className="size-4" />}
           />
-          {project.milestones.length > 0 ? (
+          {milestonesList.length > 0 ? (
             <div className="border-b border-border px-4 py-3">
               <ProgressBar value={stats?.milestoneProgress ?? 0} color={project.color} />
             </div>
           ) : null}
+
           <div className="divide-y divide-border">
-            {project.milestones.map((milestone) => (
-              <div key={milestone.id} className="flex items-center gap-2.5 px-4 py-2.5">
-                <button
-                  type="button"
-                  aria-label={milestone.completed ? 'Reopen milestone' : 'Complete milestone'}
-                  onClick={() => void projectRepo.toggleMilestone(project.id, milestone.id)}
-                  className="shrink-0 text-muted-foreground transition-colors hover:text-accent"
-                >
-                  {milestone.completed ? (
-                    <CheckCircle2 className="size-4 text-emerald-400" />
-                  ) : (
-                    <Circle className="size-4" />
-                  )}
-                </button>
-                <span
-                  className={
-                    milestone.completed
-                      ? 'min-w-0 flex-1 truncate text-sm text-muted-foreground line-through'
-                      : 'min-w-0 flex-1 truncate text-sm'
-                  }
-                >
-                  {milestone.title}
-                </span>
-                <IconButton
-                  label="Remove milestone"
-                  onClick={() =>
-                    void projectRepo.setMilestones(
-                      project.id,
-                      project.milestones.filter((m) => m.id !== milestone.id),
-                    )
-                  }
-                >
-                  <X className="size-3.5" />
-                </IconButton>
-              </div>
-            ))}
+            {milestonesList.map((milestone) => {
+              const isOverdue =
+                !milestone.completed &&
+                milestone.dueDate &&
+                new Date(milestone.dueDate) < new Date()
+
+              return (
+                <div key={milestone.id} className="flex items-center gap-2.5 px-4 py-2.5">
+                  <button
+                    type="button"
+                    aria-label={
+                      milestone.completed
+                        ? t('projectDetailMilestoneReopenAria')
+                        : t('projectDetailMilestoneCompleteAria')
+                    }
+                    onClick={() => void projectRepo.toggleMilestone(project.id, milestone.id)}
+                    className="shrink-0 text-muted-foreground transition-colors hover:text-accent"
+                  >
+                    {milestone.completed ? (
+                      <CheckCircle2 className="size-4 text-emerald-400" />
+                    ) : (
+                      <Circle className="size-4" />
+                    )}
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <span
+                      className={
+                        milestone.completed
+                          ? 'block truncate text-sm text-muted-foreground line-through'
+                          : 'block truncate text-sm'
+                      }
+                    >
+                      {milestone.title}
+                    </span>
+                    {milestone.dueDate ? (
+                      <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <CalendarClock className="size-3" />
+                        <span className={isOverdue ? 'text-rose-400 font-medium' : ''}>
+                          {t('projectsDue', { date: formatDate(milestone.dueDate) })}
+                          {isOverdue ? ` ${t('projectsDueOverdue')}` : ''}
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
+                  <IconButton
+                    label={t('projectDetailMilestoneRemoveAria')}
+                    onClick={() =>
+                      void projectRepo.setMilestones(
+                        project.id,
+                        milestonesList.filter((m) => m.id !== milestone.id),
+                      )
+                    }
+                  >
+                    <X className="size-3.5" />
+                  </IconButton>
+                </div>
+              )
+            })}
           </div>
-          <div className="flex gap-2 border-t border-border p-3">
+
+          {/* Add Milestone Form with Jalali Date Picker */}
+          <div className="flex flex-col gap-2 border-t border-border p-3 bg-muted/20">
             <Input
               value={milestoneTitle}
-              placeholder="New milestone…"
+              placeholder={t('projectDetailMilestonePlaceholder')}
+              className="h-8 text-xs"
               onChange={(e) => setMilestoneTitle(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void addMilestone()
               }}
             />
-            <Button variant="secondary" onClick={() => void addMilestone()} disabled={!milestoneTitle.trim()}>
-              Add
-            </Button>
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <JalaliDatePicker
+                  value={milestoneDueDate}
+                  placeholder={t('projectDetailMilestoneDateOptional')}
+                  onChange={(v) => setMilestoneDueDate(v)}
+                />
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void addMilestone()}
+                disabled={!milestoneTitle.trim()}
+              >
+                {t('projectDetailMilestoneAddBtn')}
+              </Button>
+            </div>
           </div>
         </Card>
       </div>
@@ -365,8 +535,8 @@ export function ProjectDetailPage() {
         open={deleting != null}
         onClose={() => setDeleting(null)}
         onConfirm={confirmDelete}
-        title="Delete task?"
-        message={deleting ? <>“{deleting.title}” will be removed permanently.</> : null}
+        title={t('projectDetailDeleteTaskTitle')}
+        message={deleting ? t('projectDetailDeleteTaskMsg', { title: deleting.title }) : null}
       />
       <EditProjectModal
         open={editOpen}
@@ -389,6 +559,7 @@ function EditProjectModal({
   project: Project
   onDone: () => void
 }) {
+  const t = useT()
   const [name, setName] = useState(project.name)
   const [description, setDescription] = useState(project.description)
   const [color, setColor] = useState(project.color)
@@ -412,10 +583,10 @@ function EditProjectModal({
         priority,
         deadline: deadline ? fromDateInput(deadline) : null,
       })
-      toast.success('Project updated')
+      toast.success(t('projectsToastUpdated'))
       onClose()
     } catch (error) {
-      toast.error((error as Error).message || 'Could not update the project')
+      toast.error((error as Error).message || t('projectsToastUpdateError'))
     } finally {
       setBusy(false)
     }
@@ -426,31 +597,31 @@ function EditProjectModal({
       <Modal
         open={open}
         onClose={onClose}
-        title="Edit project"
+        title={t('projectsEditProject')}
         footer={
           <>
             <Button
               variant="ghost"
-              className="mr-auto text-rose-400 hover:text-rose-300"
+              className="me-auto text-rose-400 hover:text-rose-300"
               onClick={() => setDeleteOpen(true)}
             >
               <Trash2 className="size-4" />
-              Delete
+              {t('cDelete')}
             </Button>
             <Button variant="ghost" onClick={onClose} disabled={busy}>
-              Cancel
+              {t('cCancel')}
             </Button>
             <Button variant="primary" onClick={() => void submit()} disabled={busy || !name.trim()}>
-              Save
+              {t('projectsSaveProject')}
             </Button>
           </>
         }
       >
         <div className="flex flex-col gap-3">
-          <Field label="Name" required htmlFor="ep-name">
+          <Field label={t('projectsFieldName')} required htmlFor="ep-name">
             <Input id="ep-name" value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
-          <Field label="Description" htmlFor="ep-desc">
+          <Field label={t('projectsFieldDescription')} htmlFor="ep-desc">
             <Textarea
               id="ep-desc"
               value={description}
@@ -458,36 +629,36 @@ function EditProjectModal({
             />
           </Field>
           <div className="grid gap-3 sm:grid-cols-3">
-            <Field label="Status">
+            <Field label={t('projectsFieldStatus')}>
               <Select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as ProjectStatus)}
               >
                 {PROJECT_STATUSES.map((s) => (
                   <option key={s} value={s}>
-                    {PROJECT_STATUS_LABEL[s]}
+                    {projectStatusLabel(s)}
                   </option>
                 ))}
               </Select>
             </Field>
-            <Field label="Priority">
+            <Field label={t('projectsFieldPriority')}>
               <OptionSelect
                 value={priority}
                 onChange={setPriority}
-                options={PRIORITIES.map((p) => ({ value: p, label: PRIORITY_LABEL[p] }))}
+                options={PRIORITIES.map((p) => ({ value: p, label: priorityLabel(p) }))}
               />
             </Field>
-            <Field label="Deadline">
+            <Field label={t('projectsFieldDeadline')}>
               <JalaliDatePicker value={deadline} onChange={(v) => setDeadline(v)} />
             </Field>
           </div>
-          <Field label="Colour">
+          <Field label={t('projectsFieldColour')}>
             <div className="flex flex-wrap gap-1.5">
               {ENTITY_COLORS.map((c) => (
                 <button
                   key={c}
                   type="button"
-                  aria-label={`Colour ${c}`}
+                  aria-label={t('projectsFieldColourAria', { c })}
                   onClick={() => setColor(c)}
                   className="size-6 rounded-full border-2 transition-transform hover:scale-110"
                   style={{
@@ -506,12 +677,12 @@ function EditProjectModal({
         onClose={() => setDeleteOpen(false)}
         onConfirm={async () => {
           await projectRepo.remove(project.id, 'detach')
-          toast.success('Project deleted — its tasks moved to the Inbox')
+          toast.success(t('projectsToastDeleted', { name: project.name }))
           setDeleteOpen(false)
           onDone()
         }}
-        title="Delete project?"
-        message={<>“{project.name}” will be removed. Its tasks move to the Inbox, not to the void.</>}
+        title={t('projectsDeleteProject')}
+        message={t('projectsDeleteConfirmMsg', { name: project.name })}
       />
     </>
   )

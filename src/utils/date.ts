@@ -167,9 +167,13 @@ export function formatClock(value: ISODateTime | Date): string {
 }
 
 export function formatDate(value: ISODateTime | Date, pattern = 'd MMM yyyy'): string {
-  if (isJalali()) return formatJalali(value, pattern)
-  const d = typeof value === 'string' ? parseISO(value) : value
-  return format(d, pattern, { locale: activeDateLocale() })
+  try {
+    if (isJalali()) return formatJalali(value, pattern)
+    const d = typeof value === 'string' ? parseISO(value) : value
+    return format(d, pattern, { locale: activeDateLocale() })
+  } catch {
+    return typeof value === 'string' ? value : ''
+  }
 }
 
 export function formatDayLabel(day: DayKey): string {

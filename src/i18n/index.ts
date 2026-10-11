@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Priority, ProjectStatus, TaskStatus } from '@/types'
+import type { GoalStatus, Priority, ProjectStatus, TaskStatus } from '@/types'
 import type { Rating } from '@/services/scoring'
 import { en, type Dictionary, type TranslationKey } from './en'
 import { fa } from './fa'
@@ -128,6 +128,16 @@ export function projectStatusLabel(status: ProjectStatus): string {
   return t(map[status])
 }
 
+export function goalStatusLabel(status: GoalStatus): string {
+  const map: Record<GoalStatus, TranslationKey> = {
+    active: 'stActive',
+    achieved: 'stAchieved',
+    paused: 'stPaused',
+    abandoned: 'stAbandoned',
+  }
+  return t(map[status])
+}
+
 export function priorityLabel(priority: Priority): string {
   const map: Record<Priority, TranslationKey> = {
     critical: 'prCritical',
@@ -149,3 +159,15 @@ export function ratingLabel(rating: Rating): string {
   }
   return t(map[rating])
 }
+
+export function healthLabel(health: string): string {
+  const map: Record<string, TranslationKey> = {
+    on_track: 'healthOnTrack',
+    at_risk: 'healthAtRisk',
+    off_track: 'healthOffTrack',
+    done: 'healthDone',
+    idle: 'healthIdle',
+  }
+  return map[health] ? t(map[health]) : health
+}
+

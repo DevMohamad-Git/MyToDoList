@@ -46,10 +46,12 @@ export function uniq<T>(items: T[]): T[] {
   return Array.from(new Set(items))
 }
 
-export function byOrderThenCreated<T extends { order: number; createdAt: string }>(
+export function byOrderThenCreated<T extends { order?: number; createdAt?: string }>(
   a: T,
   b: T,
 ): number {
-  if (a.order !== b.order) return a.order - b.order
-  return a.createdAt.localeCompare(b.createdAt)
+  const orderA = a.order ?? 0
+  const orderB = b.order ?? 0
+  if (orderA !== orderB) return orderA - orderB
+  return (a.createdAt ?? '').localeCompare(b.createdAt ?? '')
 }
