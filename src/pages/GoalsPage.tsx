@@ -1019,19 +1019,20 @@ function GoalTasksModal({
   const [busy, setBusy] = useState(false)
 
   if (!goal) return null
+  const currentGoal = goal
 
   // Eligible tasks to link (unlinked to this goal and not completed)
   const unlinkedCandidates = allWorkspaceTasks.filter(
-    (tk) => tk.goalId !== goal.id && !tk.archived && !['completed', 'cancelled'].includes(tk.status),
+    (tk) => tk.goalId !== currentGoal.id && !tk.archived && !['completed', 'cancelled'].includes(tk.status),
   )
 
   async function handleCreateTask() {
-    if (!newTaskTitle.trim()) return
+    if (!newTaskTitle.trim() || !currentGoal) return
     setBusy(true)
     try {
       await taskRepo.create(workspaceId, {
         title: newTaskTitle.trim(),
-        goalId: goal.id,
+        goalId: currentGoal.id,
         status: 'planned',
       })
       toast.success(t('goalsToastTaskLinked'))
@@ -1042,10 +1043,10 @@ function GoalTasksModal({
   }
 
   async function handleLinkExisting() {
-    if (!selectedExistingId) return
+    if (!selectedExistingId || !currentGoal) return
     setBusy(true)
     try {
-      await taskRepo.update(selectedExistingId, { goalId: goal.id })
+      await taskRepo.update(selectedExistingId, { goalId: currentGoal.id })
       toast.success(t('goalsToastTaskLinked'))
       setSelectedExistingId('')
     } finally {
@@ -1064,7 +1065,7 @@ function GoalTasksModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={t('goalsTasksModalTitle', { title: goal.title })}
+      title={t('goalsTasksModalTitle', { title: currentGoal.title })}
       size="md"
       footer={
         <Button variant="secondary" onClick={onClose}>
