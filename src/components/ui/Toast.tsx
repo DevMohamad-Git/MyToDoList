@@ -13,25 +13,31 @@ import { cn } from '@/utils/cn'
 
 export type ToastTone = 'success' | 'error' | 'info'
 
+export interface ToastAction {
+  label: string
+  onClick: () => void
+}
+
 export interface Toast {
   id: string
   tone: ToastTone
   message: string
   /** Milliseconds before auto-dismissal; `0` keeps it until dismissed. */
   duration: number
+  action?: ToastAction
 }
 
 interface ToastState {
   toasts: Toast[]
-  push: (message: string, tone?: ToastTone, duration?: number) => string
+  push: (message: string, tone?: ToastTone, duration?: number, action?: ToastAction) => string
   dismiss: (id: string) => void
 }
 
 export const useToastStore = create<ToastState>()((set) => ({
   toasts: [],
-  push(message, tone = 'info', duration = tone === 'error' ? 6000 : 3200) {
+  push(message, tone = 'info', duration = tone === 'error' ? 6000 : 3800, action?: ToastAction) {
     const id = newId()
-    set((s) => ({ toasts: [...s.toasts, { id, tone, message, duration }] }))
+    set((s) => ({ toasts: [...s.toasts, { id, tone, message, duration, action }] }))
     if (duration > 0) {
       window.setTimeout(() => {
         set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }))
@@ -45,9 +51,12 @@ export const useToastStore = create<ToastState>()((set) => ({
 }))
 
 export const toast = {
-  success: (message: string) => useToastStore.getState().push(message, 'success'),
-  error: (message: string) => useToastStore.getState().push(message, 'error'),
-  info: (message: string) => useToastStore.getState().push(message, 'info'),
+  success: (message: string, action?: ToastAction) =>
+    useToastStore.getState().push(message, 'success', action ? 5000 : 3200, action),
+  error: (message: string, action?: ToastAction) =>
+    useToastStore.getState().push(message, 'error', 6000, action),
+  info: (message: string, action?: ToastAction) =>
+    useToastStore.getState().push(message, 'info', 3200, action),
 }
 
 const TONE: Record<ToastTone, { class: string; icon: typeof Check }> = {
@@ -79,7 +88,21 @@ export function Toaster() {
             )}
           >
             <Icon className="mt-0.5 size-4 shrink-0" />
-            <span className="min-w-0 flex-1 break-words">{item.message}</span>
+            <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+              <span className="min-w-0 break-words">{item.message}</span>
+              {item.action ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    item.action?.onClick()
+                    dismiss(item.id)
+                  }}
+                  className="shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold underline underline-offset-2 transition-opacity hover:opacity-80 cursor-pointer"
+                >
+                  {item.action.label}
+                </button>
+              ) : null}
+            </div>
             <button
               type="button"
               aria-label="Dismiss"
