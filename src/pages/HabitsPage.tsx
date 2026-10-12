@@ -1,10 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
-  ArrowDown,
-  ArrowUp,
   BarChart2,
   Check,
-  CheckCircle2,
   FileText,
   Flame,
   Plus,

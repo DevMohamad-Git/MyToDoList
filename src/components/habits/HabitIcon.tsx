@@ -22,7 +22,6 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react'
-import type { ComponentType } from 'react'
 import { cn } from '@/utils/cn'
 
 export interface HabitIconDef {

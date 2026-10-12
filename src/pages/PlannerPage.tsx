@@ -7,6 +7,7 @@ import {
   CalendarPlus,
   Check,
   Coffee,
+  GripVertical,
   ListChecks,
   Plus,
   Search,
@@ -184,19 +185,18 @@ export function PlannerPage() {
     setProposal(p)
   }
 
-  // Parallel bulk update for top database performance
+  // Atomic bulk update for top database performance
   async function applyProposal() {
     if (!proposal) return
     setApplying(true)
     try {
       const patches = proposalToPatches(proposal)
-      await Promise.all(
-        patches.map((patch) =>
-          taskRepo.update(patch.id, {
-            startDate: patch.startDate,
-            status: 'planned',
-          }),
-        ),
+      await taskRepo.bulkUpdateSchedule(
+        patches.map((patch) => ({
+          id: patch.id,
+          startDate: patch.startDate,
+          status: 'planned' as const,
+        })),
       )
       toast.success(t('plannerToastScheduledN', { n: patches.length, day: formatDayLabel(day) }))
       setProposal(null)
@@ -207,16 +207,17 @@ export function PlannerPage() {
     }
   }
 
-  // Parallel bulk update for reschedule actions
+  // Atomic bulk update for reschedule actions
   async function applyReschedule() {
     if (!reschedulePlan) return
     setApplying(true)
     try {
       const patches = rescheduleToPatches(reschedulePlan.actions)
-      await Promise.all(
-        patches.map((patch) =>
-          taskRepo.update(patch.id, { startDate: patch.startDate }),
-        ),
+      await taskRepo.bulkUpdateSchedule(
+        patches.map((patch) => ({
+          id: patch.id,
+          startDate: patch.startDate,
+        })),
       )
       toast.success(t('plannerToastRescheduleApplied', { label: reschedulePlan.label, n: patches.length }))
       setReschedulePlan(null)
@@ -255,6 +256,89 @@ export function PlannerPage() {
   const nowMinutes = minutesIntoDay(now)
   const isNowWithinTimeline = isToday && nowMinutes >= startHour * 60 && nowMinutes <= endHour * 60
   const nowTop = isNowWithinTimeline ? ((nowMinutes - startHour * 60) * hourHeight) / 60 : null
+
+  // Interactive Drag & Drop timeline state & handlers with RAF throttling
+  interface DragState {
+    taskId: string
+    initialMinutes: number
+    duration: number
+    currentMinutes: number
+  }
+
+  const [dragging, setDragging] = useState<DragState | null>(null)
+
+  function handleBlockPointerDown(e: React.PointerEvent, block: (typeof plan.blocks)[number]) {
+    if (e.button !== 0) return
+    const startY = e.clientY
+    const duration = block.end - block.start
+    const initialMinutes = block.start
+    let isDragging = false
+    let rafId: number | null = null
+
+    e.preventDefault()
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (rafId !== null) return
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null
+        const deltaY = moveEvent.clientY - startY
+        if (!isDragging && Math.abs(deltaY) > 5) {
+          isDragging = true
+        }
+        if (isDragging) {
+          const deltaMinutes = (deltaY / hourHeight) * 60
+          const rawNewMinutes = initialMinutes + deltaMinutes
+          const snapped = Math.round(rawNewMinutes / 15) * 15
+          const clamped = Math.max(0, Math.min(1440 - duration, snapped))
+          setDragging({
+            taskId: block.task.id,
+            initialMinutes,
+            duration,
+            currentMinutes: clamped,
+          })
+        }
+      })
+    }
+
+    const handlePointerUp = async (upEvent: PointerEvent) => {
+      if (rafId !== null) window.cancelAnimationFrame(rafId)
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+
+      const deltaY = upEvent.clientY - startY
+      if (!isDragging || Math.abs(deltaY) <= 5) {
+        setEditingTaskId(block.task.id)
+        setDragging(null)
+        return
+      }
+
+      const deltaMinutes = (deltaY / hourHeight) * 60
+      const rawNewMinutes = initialMinutes + deltaMinutes
+      const snapped = Math.round(rawNewMinutes / 15) * 15
+      const clamped = Math.max(0, Math.min(1440 - duration, snapped))
+
+      setDragging(null)
+
+      if (clamped !== initialMinutes) {
+        const newStartDate = toISO(dayAtMinutes(day, clamped))
+        try {
+          await taskRepo.update(block.task.id, { startDate: newStartDate })
+          toast.success(
+            t('plannerToastMoved', {
+              title: block.task.title,
+              time: formatMinutesOfDay(clamped),
+            }),
+          )
+        } catch (err) {
+          toast.error((err as Error).message || t('plannerToastMoveError'))
+        }
+      }
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+  }
+
 
   return (
     <>
@@ -433,41 +517,66 @@ export function PlannerPage() {
 
             {/* Scheduled Task Blocks */}
             {plan.blocks.map((block) => {
-              const top = ((block.start - startHour * 60) * hourHeight) / 60
-              const height = Math.max(24, ((block.end - block.start) * hourHeight) / 60)
+              const isBeingDragged = dragging?.taskId === block.task.id
+              const duration = block.end - block.start
+              const displayStart = isBeingDragged ? dragging.currentMinutes : block.start
+              const top = ((displayStart - startHour * 60) * hourHeight) / 60
+              const height = Math.max(24, (duration * hourHeight) / 60)
               const closed = CLOSED_TASK_STATUSES.includes(block.task.status)
               const conflict = block.conflictsWith.length > 0
               return (
-                <div
-                  key={block.task.id}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setEditingTaskId(block.task.id)
-                  }}
-                  title={`${block.task.title} · ${formatMinutesOfDay(block.start)}–${formatMinutesOfDay(block.end)}${conflict ? ` · ${t('plannerOverlapping')}` : ''} — ${t('plannerClickToEdit')}`}
-                  className={cn(
-                    'group/block absolute start-16 end-3 overflow-hidden rounded-lg border px-2.5 py-1.5 text-xs shadow-sm transition-all duration-150',
-                    'cursor-pointer hover:shadow-md hover:border-accent hover:z-10',
-                    closed ? 'border-border bg-muted/40 opacity-60' : 'border-border bg-card',
-                    conflict && 'border-amber-500/50 bg-amber-500/5',
-                  )}
-                  style={{ top, height }}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className={cn('truncate font-medium group-hover/block:text-accent transition-colors', closed && 'line-through')}>
-                      {block.task.title}
-                    </span>
-                    <span className="shrink-0 tabular-nums text-muted-foreground">
-                      {formatMinutesOfDay(block.start)}
-                    </span>
-                  </div>
-                  {height >= 44 ? (
-                    <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                      {formatDuration(block.end - block.start)}
-                      {conflict ? ` · ${t('plannerOverlapping')}` : ''}
-                      {block.task.priority !== 'medium' ? ` · ${priorityLabel(block.task.priority)}` : ''}
-                    </div>
+                <div key={block.task.id}>
+                  {/* Ghost block showing original position while dragging */}
+                  {isBeingDragged ? (
+                    <div
+                      className="pointer-events-none absolute start-16 end-3 rounded-lg border-2 border-dashed border-accent/40 bg-accent/5 opacity-50 transition-none"
+                      style={{
+                        top: ((block.start - startHour * 60) * hourHeight) / 60,
+                        height,
+                      }}
+                    />
                   ) : null}
+
+                  <div
+                    onPointerDown={(e) => handleBlockPointerDown(e, block)}
+                    title={`${block.task.title} · ${formatMinutesOfDay(displayStart)}–${formatMinutesOfDay(displayStart + duration)}${conflict ? ` · ${t('plannerOverlapping')}` : ''} — ${t('plannerDragHint')}`}
+                    className={cn(
+                      'group/block absolute start-16 end-3 overflow-hidden rounded-lg border px-2.5 py-1.5 text-xs select-none touch-none',
+                      isBeingDragged
+                        ? 'z-40 shadow-2xl ring-2 ring-accent scale-[1.02] cursor-grabbing bg-card opacity-95 transition-none'
+                        : 'cursor-grab hover:shadow-md hover:border-accent hover:z-10 transition-all duration-150 shadow-sm',
+                      closed ? 'border-border bg-muted/40 opacity-60' : 'border-border bg-card',
+                      conflict && !isBeingDragged && 'border-amber-500/50 bg-amber-500/5',
+                    )}
+                    style={{ top, height }}
+                  >
+                    <div className="flex items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1 min-w-0">
+                        <GripVertical className="size-3 shrink-0 text-muted-foreground/40 group-hover/block:text-accent transition-colors" />
+                        <span className={cn('truncate font-medium group-hover/block:text-accent transition-colors', closed && 'line-through')}>
+                          {block.task.title}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {isBeingDragged ? (
+                          <span className="rounded bg-accent/20 px-1 py-0.5 text-[10px] font-bold text-accent tabular-nums animate-pulse">
+                            {formatMinutesOfDay(displayStart)}
+                          </span>
+                        ) : (
+                          <span className="tabular-nums text-muted-foreground">
+                            {formatMinutesOfDay(block.start)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {height >= 44 ? (
+                      <div className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] text-muted-foreground ps-4">
+                        <span>{formatDuration(duration)}</span>
+                        {conflict && !isBeingDragged ? <span>· {t('plannerOverlapping')}</span> : null}
+                        {block.task.priority !== 'medium' ? <span>· {priorityLabel(block.task.priority)}</span> : null}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               )
             })}
