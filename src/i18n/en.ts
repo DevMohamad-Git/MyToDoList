@@ -580,6 +580,20 @@ export const en = {
   setSnapshotConfirmMsg: 'Your current workspace data will be rolled back to the state saved on {time}. Proceed?',
   setNoSnapshot: 'No local snapshot created yet',
   setLastSnapshotTime: 'Snapshot created at {time}',
+  setViewSnapshots: 'View Restore Points',
+  setClearAllSnapshots: 'Clear All Restore Points',
+  setClearAllSnapshotsTitle: 'Delete all local restore points?',
+  setClearAllSnapshotsMsg:
+    'All saved snapshots for this workspace will be deleted to free up local browser storage. This cannot be undone.',
+  setAllSnapshotsCleared: 'Deleted {count} restore points and freed storage',
+  setSnapshotDeleted: 'Restore point deleted',
+  setNoSnapshotsFound: 'No saved restore points found',
+  setSnapshotListTitle: 'Local Restore Points',
+  setSnapshotListDesc: 'Choose a restore point to roll back, or delete unneeded snapshots to free up browser storage',
+  setSnapshotsCount: '{count} restore points',
+  setTasksCount: '{count} tasks',
+  setProjectsCount: '{count} projects',
+  setDeleteSnapshotConfirm: 'Delete this restore point?',
 
   /* --------------------------------------------------------- planner page -- */
   plannerTitle: 'Planner',

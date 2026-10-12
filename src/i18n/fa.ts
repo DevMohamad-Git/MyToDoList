@@ -579,6 +579,20 @@ export const fa: Dictionary = {
   setSnapshotConfirmMsg: 'تمام داده‌های فعلی به وضعیت ذخیره‌شده در ساعت {time} بازگردانده می‌شوند. ادامه می‌دهید؟',
   setNoSnapshot: 'هنوز نقطه بازیابی محلی ایجاد نشده است',
   setLastSnapshotTime: 'آخرین نقطه بازیابی: {time}',
+  setViewSnapshots: 'مشاهده لیست بازیابی‌ها',
+  setClearAllSnapshots: 'پاک کردن تمامی نقاط بازیابی',
+  setClearAllSnapshotsTitle: 'حذف تمامی نقاط بازیابی محلی؟',
+  setClearAllSnapshotsMsg:
+    'تمام نقاط بازیابی ذخیره‌شده برای این فضای کاری حذف خواهند شد تا فضای مرورگر آزاد شود. این کار قابل بازگشت نیست.',
+  setAllSnapshotsCleared: '{count} نقطه بازیابی با موفقیت حذف شد و حافظه آزاد گردید',
+  setSnapshotDeleted: 'نقطه بازیابی حذف شد',
+  setNoSnapshotsFound: 'هنوز هیچ نقطه بازیابی ذخیره نشده است',
+  setSnapshotListTitle: 'لیست نقاط بازیابی محلی',
+  setSnapshotListDesc: 'نقطه مورد نظر را جهت بازگردانی انتخاب کنید یا موارد اضافی را برای آزادسازی حافظه حذف نمایید',
+  setSnapshotsCount: '{count} نقطه بازیابی',
+  setTasksCount: '{count} کار',
+  setProjectsCount: '{count} پروژه',
+  setDeleteSnapshotConfirm: 'این نقطه بازیابی حذف شود؟',
 
   /* --------------------------------------------------------- planner page -- */
   plannerTitle: 'برنامه‌ریز',

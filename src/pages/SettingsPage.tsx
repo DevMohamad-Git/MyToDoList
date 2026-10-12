@@ -40,6 +40,7 @@ import {
   Field,
   Input,
   JalaliTimePicker,
+  Modal,
   PageHeader,
   SegmentedControl,
   Select,
@@ -66,8 +67,10 @@ import {
   diagnoseWorkspace,
   optimizeAndVacuumWorkspace,
   createLocalSnapshot,
-  getLatestSnapshot,
+  listSnapshots,
   restoreFromSnapshot,
+  deleteSnapshot,
+  clearAllSnapshots,
   type DatabaseDiagnostics,
   type LocalSnapshotMeta,
 } from '@/services/dbMaintenance'
@@ -111,7 +114,11 @@ export function SettingsPage() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [resetAchievementsOpen, setResetAchievementsOpen] = useState(false)
   const [resetSettingsOpen, setResetSettingsOpen] = useState(false)
-  const [restoreSnapshotOpen, setRestoreSnapshotOpen] = useState(false)
+  const [snapshots, setSnapshots] = useState<LocalSnapshotMeta[]>([])
+  const [snapshotsModalOpen, setSnapshotsModalOpen] = useState(false)
+  const [clearAllSnapshotsOpen, setClearAllSnapshotsOpen] = useState(false)
+  const [snapshotToRestore, setSnapshotToRestore] = useState<LocalSnapshotMeta | null>(null)
+  const [snapshotToDelete, setSnapshotToDelete] = useState<LocalSnapshotMeta | null>(null)
   const [storage, setStorage] = useState<{ usage: number; quota: number } | null>(null)
   const [lastExportName, setLastExportName] = useState<string | null>(null)
 
@@ -119,7 +126,6 @@ export function SettingsPage() {
   const [diagnostics, setDiagnostics] = useState<DatabaseDiagnostics | null>(null)
   const [diagLoading, setDiagLoading] = useState(false)
   const [optimizing, setOptimizing] = useState(false)
-  const [snapshotMeta, setSnapshotMeta] = useState<LocalSnapshotMeta | null>(null)
   const [activityRetentionDays, setActivityRetentionDays] = useState<number>(30)
   const [autoArchiveCompleted, setAutoArchiveCompleted] = useState<boolean>(true)
   const [pruningLogs, setPruningLogs] = useState(false)
@@ -136,11 +142,20 @@ export function SettingsPage() {
     }
   }, [workspace.id])
 
+  const refreshSnapshots = useCallback(async () => {
+    try {
+      const list = await listSnapshots(workspace.id)
+      setSnapshots(list)
+    } catch {
+      // Ignore
+    }
+  }, [workspace.id])
+
   useEffect(() => {
     void estimateStorage().then(setStorage)
     void runDiagnostics()
-    void getLatestSnapshot(workspace.id).then(setSnapshotMeta)
-  }, [workspace.id, lastExportName, runDiagnostics])
+    void refreshSnapshots()
+  }, [workspace.id, lastExportName, runDiagnostics, refreshSnapshots])
 
   const capabilities = fsCapabilities()
 
@@ -189,7 +204,8 @@ export function SettingsPage() {
     setBusy(true)
     try {
       const meta = await createLocalSnapshot(workspace.id)
-      setSnapshotMeta(meta)
+      await refreshSnapshots()
+      void estimateStorage().then(setStorage)
       toast.success(t('setSnapshotSaved', { size: formatBytes(meta.sizeBytes) }))
     } catch (error) {
       toast.error((error as Error).message || 'Snapshot failed')
@@ -198,21 +214,54 @@ export function SettingsPage() {
     }
   }
 
-  async function handleRestoreSnapshot() {
+  async function handleRestoreSnapshot(meta: LocalSnapshotMeta) {
     setBusy(true)
     try {
-      const ok = await restoreFromSnapshot(workspace.id)
+      const ok = await restoreFromSnapshot(workspace.id, meta.id)
       if (ok) {
         await refresh()
         await runDiagnostics()
+        await refreshSnapshots()
         void estimateStorage().then(setStorage)
-        setRestoreSnapshotOpen(false)
+        setSnapshotToRestore(null)
+        setSnapshotsModalOpen(false)
         toast.success(t('setSnapshotRestored'))
       } else {
         toast.error('Could not restore snapshot')
       }
     } catch (error) {
       toast.error((error as Error).message || 'Restore failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDeleteSnapshot(meta: LocalSnapshotMeta) {
+    setBusy(true)
+    try {
+      await deleteSnapshot(workspace.id, meta.id)
+      await refreshSnapshots()
+      void estimateStorage().then(setStorage)
+      setSnapshotToDelete(null)
+      toast.success(t('setSnapshotDeleted'))
+    } catch (error) {
+      toast.error((error as Error).message || 'Delete failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleClearAllSnapshots() {
+    setBusy(true)
+    try {
+      const count = await clearAllSnapshots(workspace.id)
+      await refreshSnapshots()
+      void estimateStorage().then(setStorage)
+      setClearAllSnapshotsOpen(false)
+      setSnapshotsModalOpen(false)
+      toast.success(t('setAllSnapshotsCleared', { count }))
+    } catch (error) {
+      toast.error((error as Error).message || 'Clear failed')
     } finally {
       setBusy(false)
     }
@@ -996,29 +1045,37 @@ export function SettingsPage() {
                 <div>
                   <p className="text-xs font-medium text-foreground">{t('setLocalSnapshot')}</p>
                   <p className="text-2xs text-muted-foreground">
-                    {snapshotMeta
-                      ? t('setLastSnapshotTime', {
-                          time: new Date(snapshotMeta.savedAt).toLocaleDateString() + ' ' + new Date(snapshotMeta.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                        })
+                    {snapshots.length > 0
+                      ? `${t('setSnapshotsCount', { count: snapshots.length })} (${formatBytes(snapshots.reduce((acc, s) => acc + s.sizeBytes, 0))})`
                       : t('setNoSnapshot')}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => void handleCreateSnapshot()} disabled={busy}>
                   <Save className="size-3.5" />
                   {t('setCreateSnapshot')}
                 </Button>
-                {snapshotMeta && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setRestoreSnapshotOpen(true)}
-                    disabled={busy}
-                  >
-                    <RotateCcw className="size-3.5" />
-                    {t('setRestoreSnapshot')}
-                  </Button>
+                {snapshots.length > 0 && (
+                  <>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setSnapshotsModalOpen(true)}
+                    >
+                      <History className="size-3.5" />
+                      {t('setViewSnapshots')}
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => setClearAllSnapshotsOpen(true)}
+                      disabled={busy}
+                    >
+                      <Trash2 className="size-3.5" />
+                      {t('setClearAllSnapshots')}
+                    </Button>
+                  </>
                 )}
               </div>
             </div>
@@ -1099,17 +1156,132 @@ export function SettingsPage() {
         </Card>
       </div>
 
+      {/* Snapshots Management Modal */}
+      <Modal
+        open={snapshotsModalOpen}
+        onClose={() => setSnapshotsModalOpen(false)}
+        title={t('setSnapshotListTitle')}
+        description={t('setSnapshotListDesc')}
+        size="lg"
+        footer={
+          <div className="flex w-full items-center justify-between">
+            {snapshots.length > 0 ? (
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => setClearAllSnapshotsOpen(true)}
+              >
+                <Trash2 className="size-3.5" />
+                {t('setClearAllSnapshots')}
+              </Button>
+            ) : <div />}
+            <Button variant="ghost" size="sm" onClick={() => setSnapshotsModalOpen(false)}>
+              {t('cCancel')}
+            </Button>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-2.5 max-h-[60vh] overflow-y-auto pr-1">
+          {snapshots.length === 0 ? (
+            <div className="flex flex-col items-center justify-center p-8 text-center text-muted-foreground">
+              <Clock className="size-8 mb-2 opacity-50" />
+              <p className="text-sm">{t('setNoSnapshotsFound')}</p>
+            </div>
+          ) : (
+            snapshots.map((s) => (
+              <div
+                key={s.id}
+                className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/20 p-3 hover:bg-muted/40 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-accent/20 bg-accent/10 text-accent">
+                    <Clock className="size-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-foreground">
+                      {new Date(s.savedAt).toLocaleDateString()} —{' '}
+                      {new Date(s.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2 mt-1 text-2xs text-muted-foreground">
+                      <span className="rounded bg-muted px-1.5 py-0.5 border border-border/50">
+                        {t('setTasksCount', { count: s.tasksCount })}
+                      </span>
+                      <span className="rounded bg-muted px-1.5 py-0.5 border border-border/50">
+                        {t('setProjectsCount', { count: s.projectsCount })}
+                      </span>
+                      <span className="rounded bg-accent/10 text-accent px-1.5 py-0.5 font-medium border border-accent/20">
+                        {formatBytes(s.sizeBytes)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 self-end sm:self-center">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setSnapshotToRestore(s)}
+                    disabled={busy}
+                  >
+                    <RotateCcw className="size-3.5" />
+                    {t('setRestoreSnapshot')}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSnapshotToDelete(s)}
+                    disabled={busy}
+                    className="text-rose-500 hover:text-rose-600 hover:bg-rose-500/10"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </Modal>
+
       <ConfirmDialog
-        open={restoreSnapshotOpen}
-        onClose={() => setRestoreSnapshotOpen(false)}
+        open={Boolean(snapshotToRestore)}
+        onClose={() => setSnapshotToRestore(null)}
         destructive={true}
         confirmLabel={t('setRestoreSnapshot')}
         cancelLabel={t('cCancel')}
-        onConfirm={() => void handleRestoreSnapshot()}
+        onConfirm={() => {
+          if (snapshotToRestore) void handleRestoreSnapshot(snapshotToRestore)
+        }}
         title={t('setSnapshotConfirmTitle')}
         message={t('setSnapshotConfirmMsg', {
-          time: snapshotMeta ? new Date(snapshotMeta.savedAt).toLocaleString() : '',
+          time: snapshotToRestore ? new Date(snapshotToRestore.savedAt).toLocaleString() : '',
         })}
+      />
+
+      <ConfirmDialog
+        open={Boolean(snapshotToDelete)}
+        onClose={() => setSnapshotToDelete(null)}
+        destructive={true}
+        confirmLabel={t('setClearConfirmBtn')}
+        cancelLabel={t('cCancel')}
+        onConfirm={() => {
+          if (snapshotToDelete) void handleDeleteSnapshot(snapshotToDelete)
+        }}
+        title={t('setDeleteSnapshotConfirm')}
+        message={
+          snapshotToDelete
+            ? `${new Date(snapshotToDelete.savedAt).toLocaleString()} (${formatBytes(snapshotToDelete.sizeBytes)})`
+            : ''
+        }
+      />
+
+      <ConfirmDialog
+        open={clearAllSnapshotsOpen}
+        onClose={() => setClearAllSnapshotsOpen(false)}
+        destructive={true}
+        confirmLabel={t('setClearAllSnapshots')}
+        cancelLabel={t('cCancel')}
+        onConfirm={() => void handleClearAllSnapshots()}
+        title={t('setClearAllSnapshotsTitle')}
+        message={t('setClearAllSnapshotsMsg')}
       />
 
       <ConfirmDialog

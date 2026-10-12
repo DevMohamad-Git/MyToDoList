@@ -62,14 +62,13 @@ export interface OptimizationResult {
 }
 
 export interface LocalSnapshotMeta {
+  id: string
   savedAt: string
   workspaceName: string
   tasksCount: number
   projectsCount: number
   sizeBytes: number
 }
-
-const SNAPSHOT_KEY_PREFIX = 'snapshot_workspace_'
 
 /**
  * Perform a non-destructive audit of database integrity, orphan records, and space usage.
@@ -516,12 +515,14 @@ export async function optimizeAndVacuumWorkspace(
 }
 
 /**
- * Creates an instant, local snapshot in browser IndexedDB (db.meta) for rapid one-click undo/restore.
+ * Creates an instant, local snapshot in browser IndexedDB (db.meta) with unique ID.
  */
 export async function createLocalSnapshot(workspaceId: ID): Promise<LocalSnapshotMeta> {
   const bundle = await exportWorkspace(workspaceId, { includeAttachments: false, includeActivity: true })
   const serialized = serializeBundle(bundle)
+  const id = `snap_${Date.now()}`
   const meta: LocalSnapshotMeta = {
+    id,
     savedAt: nowISO(),
     workspaceName: bundle.workspace.name,
     tasksCount: bundle.tasks.length,
@@ -530,7 +531,7 @@ export async function createLocalSnapshot(workspaceId: ID): Promise<LocalSnapsho
   }
 
   await db.meta.put({
-    key: `${SNAPSHOT_KEY_PREFIX}${workspaceId}`,
+    key: `snapshot_${workspaceId}_${id}`,
     value: { meta, bundle },
   })
 
@@ -538,20 +539,61 @@ export async function createLocalSnapshot(workspaceId: ID): Promise<LocalSnapsho
 }
 
 /**
- * Read the current local snapshot info if one exists.
+ * List all saved snapshots for a workspace, ordered newest first.
  */
-export async function getLatestSnapshot(workspaceId: ID): Promise<LocalSnapshotMeta | null> {
-  const row = await db.meta.get(`${SNAPSHOT_KEY_PREFIX}${workspaceId}`)
-  if (!row || typeof row.value !== 'object') return null
-  const snapshotData = row.value as { meta?: LocalSnapshotMeta }
-  return snapshotData.meta ?? null
+export async function listSnapshots(workspaceId: ID): Promise<LocalSnapshotMeta[]> {
+  const prefix = `snapshot_${workspaceId}_`
+  const legacyKey = `snapshot_workspace_${workspaceId}`
+
+  const allRows = await db.meta.toArray()
+  const snapshots: LocalSnapshotMeta[] = []
+
+  for (const row of allRows) {
+    if (row.key.startsWith(prefix)) {
+      const data = row.value as { meta?: LocalSnapshotMeta }
+      if (data?.meta) {
+        snapshots.push({
+          ...data.meta,
+          id: data.meta.id || row.key.replace(prefix, ''),
+        })
+      }
+    } else if (row.key === legacyKey) {
+      const data = row.value as { meta?: LocalSnapshotMeta }
+      if (data?.meta) {
+        snapshots.push({
+          ...data.meta,
+          id: data.meta.id || 'legacy',
+        })
+      }
+    }
+  }
+
+  return snapshots.sort((a, b) => b.savedAt.localeCompare(a.savedAt))
 }
 
 /**
- * Restore workspace state from the local snapshot.
+ * Read the latest local snapshot info if one exists.
  */
-export async function restoreFromSnapshot(workspaceId: ID): Promise<boolean> {
-  const row = await db.meta.get(`${SNAPSHOT_KEY_PREFIX}${workspaceId}`)
+export async function getLatestSnapshot(workspaceId: ID): Promise<LocalSnapshotMeta | null> {
+  const list = await listSnapshots(workspaceId)
+  return list[0] ?? null
+}
+
+/**
+ * Restore workspace state from a specific snapshot or the latest one.
+ */
+export async function restoreFromSnapshot(workspaceId: ID, snapshotId?: string): Promise<boolean> {
+  let targetKey: string
+  if (snapshotId) {
+    targetKey = snapshotId === 'legacy' ? `snapshot_workspace_${workspaceId}` : `snapshot_${workspaceId}_${snapshotId}`
+  } else {
+    const list = await listSnapshots(workspaceId)
+    if (list.length === 0) return false
+    const latest = list[0]
+    targetKey = latest.id === 'legacy' ? `snapshot_workspace_${workspaceId}` : `snapshot_${workspaceId}_${latest.id}`
+  }
+
+  const row = await db.meta.get(targetKey)
   if (!row || typeof row.value !== 'object') return false
   const snapshotData = row.value as { bundle?: ExportBundle }
   if (!snapshotData.bundle) return false
@@ -561,8 +603,31 @@ export async function restoreFromSnapshot(workspaceId: ID): Promise<boolean> {
 }
 
 /**
- * Clear the saved local snapshot to free up memory.
+ * Delete a specific snapshot by its ID.
  */
-export async function deleteSnapshot(workspaceId: ID): Promise<void> {
-  await db.meta.delete(`${SNAPSHOT_KEY_PREFIX}${workspaceId}`)
+export async function deleteSnapshot(workspaceId: ID, snapshotId: string): Promise<void> {
+  const key = snapshotId === 'legacy' ? `snapshot_workspace_${workspaceId}` : `snapshot_${workspaceId}_${snapshotId}`
+  await db.meta.delete(key)
+}
+
+/**
+ * Clear all saved local snapshots for a workspace to free up memory.
+ */
+export async function clearAllSnapshots(workspaceId: ID): Promise<number> {
+  const prefix = `snapshot_${workspaceId}_`
+  const legacyKey = `snapshot_workspace_${workspaceId}`
+
+  const allRows = await db.meta.toArray()
+  const keysToDelete: string[] = []
+
+  for (const row of allRows) {
+    if (row.key.startsWith(prefix) || row.key === legacyKey) {
+      keysToDelete.push(row.key)
+    }
+  }
+
+  if (keysToDelete.length > 0) {
+    await db.meta.bulkDelete(keysToDelete)
+  }
+  return keysToDelete.length
 }
