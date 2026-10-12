@@ -37,8 +37,17 @@ export const activityRepo = {
   },
 
   async recent(workspaceId: ID, limit = 50): Promise<ActivityRecord[]> {
-    const rows = await db.activity.where('workspaceId').equals(workspaceId).toArray()
-    return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit)
+    try {
+      return await db.activity
+        .where('[workspaceId+createdAt]')
+        .between([workspaceId, ''], [workspaceId, '\uffff'], true, true)
+        .reverse()
+        .limit(limit)
+        .toArray()
+    } catch {
+      const rows = await db.activity.where('workspaceId').equals(workspaceId).toArray()
+      return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit)
+    }
   },
 
   async between(workspaceId: ID, startDay: string, endDay: string): Promise<ActivityRecord[]> {
@@ -50,5 +59,26 @@ export const activityRepo = {
 
   async clearForWorkspace(workspaceId: ID): Promise<void> {
     await db.activity.where('workspaceId').equals(workspaceId).delete()
+  },
+
+  /** Delete activity rows older than N days. */
+  async pruneOlderThan(workspaceId: ID, days: number): Promise<number> {
+    const cutoffISO = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+    try {
+      const toDelete = await db.activity
+        .where('[workspaceId+createdAt]')
+        .between([workspaceId, ''], [workspaceId, cutoffISO], true, true)
+        .primaryKeys()
+      await db.activity.bulkDelete(toDelete)
+      return toDelete.length
+    } catch {
+      const rows = await db.activity
+        .where('workspaceId')
+        .equals(workspaceId)
+        .filter((act) => act.createdAt < cutoffISO)
+        .primaryKeys()
+      await db.activity.bulkDelete(rows)
+      return rows.length
+    }
   },
 }

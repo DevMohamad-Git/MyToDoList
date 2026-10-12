@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Award,
   Bell,
   Check,
+  CheckCircle2,
+  Clock,
   Coffee,
   Database,
   Download,
@@ -21,6 +23,8 @@ import {
   RotateCcw,
   Save,
   Settings as SettingsIcon,
+  ShieldCheck,
+  Sparkles,
   Sun,
   Timer,
   Trash2,
@@ -58,6 +62,16 @@ import {
   serializeBundle,
   type ExportOptions,
 } from '@/services/importExport'
+import {
+  diagnoseWorkspace,
+  optimizeAndVacuumWorkspace,
+  createLocalSnapshot,
+  getLatestSnapshot,
+  restoreFromSnapshot,
+  type DatabaseDiagnostics,
+  type LocalSnapshotMeta,
+} from '@/services/dbMaintenance'
+import { activityRepo } from '@/storage/activityRepo'
 import { downloadBlob, fsCapabilities, linkFolder, pickTextFile } from '@/storage/fileSystem'
 import { workspaceRepo, type DeepPartial } from '@/storage/workspaceRepo'
 import { achievementRepo } from '@/storage/reviewRepo'
@@ -68,10 +82,7 @@ import { formatBytes } from '@/utils/date'
 
 /**
  * Settings: workspace identity, planning and scoring configuration, appearance,
- * and the local-data lifecycle (export, import, link a folder, wipe).
- *
- * Settings patches go through `updateSettings`, which deep-merges, so every
- * control here can write just the field it owns without clobbering siblings.
+ * database health & vacuum, performance & retention policy, and data lifecycle.
  */
 export function SettingsPage() {
   const t = useT()
@@ -100,12 +111,36 @@ export function SettingsPage() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [resetAchievementsOpen, setResetAchievementsOpen] = useState(false)
   const [resetSettingsOpen, setResetSettingsOpen] = useState(false)
+  const [restoreSnapshotOpen, setRestoreSnapshotOpen] = useState(false)
   const [storage, setStorage] = useState<{ usage: number; quota: number } | null>(null)
   const [lastExportName, setLastExportName] = useState<string | null>(null)
 
+  // Database health, vacuum & maintenance state
+  const [diagnostics, setDiagnostics] = useState<DatabaseDiagnostics | null>(null)
+  const [diagLoading, setDiagLoading] = useState(false)
+  const [optimizing, setOptimizing] = useState(false)
+  const [snapshotMeta, setSnapshotMeta] = useState<LocalSnapshotMeta | null>(null)
+  const [activityRetentionDays, setActivityRetentionDays] = useState<number>(30)
+  const [autoArchiveCompleted, setAutoArchiveCompleted] = useState<boolean>(true)
+  const [pruningLogs, setPruningLogs] = useState(false)
+
+  const runDiagnostics = useCallback(async () => {
+    setDiagLoading(true)
+    try {
+      const diag = await diagnoseWorkspace(workspace.id)
+      setDiagnostics(diag)
+    } catch {
+      // Ignore
+    } finally {
+      setDiagLoading(false)
+    }
+  }, [workspace.id])
+
   useEffect(() => {
     void estimateStorage().then(setStorage)
-  }, [lastExportName])
+    void runDiagnostics()
+    void getLatestSnapshot(workspace.id).then(setSnapshotMeta)
+  }, [workspace.id, lastExportName, runDiagnostics])
 
   const capabilities = fsCapabilities()
 
@@ -121,6 +156,80 @@ export function SettingsPage() {
   async function patchSettings(patch: DeepPartial<WorkspaceSettings>, message?: string) {
     await updateSettings(patch)
     if (message) toast.success(message)
+  }
+
+  async function handleOptimize() {
+    setOptimizing(true)
+    try {
+      const res = await optimizeAndVacuumWorkspace(workspace.id, {
+        purgeOrphanBlobs: true,
+        fixDanglingReferences: true,
+        resyncDurations: true,
+        pruneActivityDays: activityRetentionDays > 0 ? activityRetentionDays : null,
+        archiveCompletedDays: autoArchiveCompleted ? 30 : null,
+      })
+      await runDiagnostics()
+      void estimateStorage().then(setStorage)
+      await refresh()
+      toast.success(
+        t('setOptimizationSuccess', {
+          bytes: formatBytes(res.freedBytes),
+          blobs: res.removedOrphanBlobs,
+          durations: res.resyncedDurations,
+        }),
+      )
+    } catch (error) {
+      toast.error((error as Error).message || 'Optimization failed')
+    } finally {
+      setOptimizing(false)
+    }
+  }
+
+  async function handleCreateSnapshot() {
+    setBusy(true)
+    try {
+      const meta = await createLocalSnapshot(workspace.id)
+      setSnapshotMeta(meta)
+      toast.success(t('setSnapshotSaved', { size: formatBytes(meta.sizeBytes) }))
+    } catch (error) {
+      toast.error((error as Error).message || 'Snapshot failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRestoreSnapshot() {
+    setBusy(true)
+    try {
+      const ok = await restoreFromSnapshot(workspace.id)
+      if (ok) {
+        await refresh()
+        await runDiagnostics()
+        void estimateStorage().then(setStorage)
+        setRestoreSnapshotOpen(false)
+        toast.success(t('setSnapshotRestored'))
+      } else {
+        toast.error('Could not restore snapshot')
+      }
+    } catch (error) {
+      toast.error((error as Error).message || 'Restore failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handlePruneLogs() {
+    setPruningLogs(true)
+    try {
+      const days = activityRetentionDays > 0 ? activityRetentionDays : 30
+      const count = await activityRepo.pruneOlderThan(workspace.id, days)
+      await runDiagnostics()
+      toast.success(t('setPrunedLogsToast', { count }))
+    } catch (error) {
+      toast.error((error as Error).message || 'Prune failed')
+    } finally {
+      setPruningLogs(false)
+    }
   }
 
   async function doExport() {
@@ -151,6 +260,7 @@ export function SettingsPage() {
       }
       const imported = await importBundle(result.bundle, 'new_workspace')
       await refresh()
+      await runDiagnostics()
       toast.success(
         t('toastImported', {
           name: imported.workspaceName,
@@ -164,6 +274,48 @@ export function SettingsPage() {
       setBusy(false)
     }
   }
+
+  const breakdownTotal = diagnostics
+    ? (diagnostics.breakdown.tasksCount +
+        diagnostics.breakdown.projectsCount +
+        diagnostics.breakdown.attachmentsCount +
+        diagnostics.breakdown.timeEntriesCount +
+        diagnostics.breakdown.habitsCount +
+        diagnostics.breakdown.activityLogsCount) || 1
+    : 1
+
+  const tasksPct = diagnostics
+    ? Math.max(
+        2,
+        Math.round(
+          ((diagnostics.breakdown.tasksCount + diagnostics.breakdown.projectsCount) / breakdownTotal) * 100,
+        ),
+      )
+    : 25
+  const filesPct = diagnostics
+    ? Math.max(2, Math.round((diagnostics.breakdown.attachmentsCount / breakdownTotal) * 100))
+    : 25
+  const timePct = diagnostics
+    ? Math.max(
+        2,
+        Math.round(
+          ((diagnostics.breakdown.timeEntriesCount + diagnostics.breakdown.habitsCount) / breakdownTotal) * 100,
+        ),
+      )
+    : 25
+  const actPct = diagnostics
+    ? Math.max(2, Math.round((diagnostics.breakdown.activityLogsCount / breakdownTotal) * 100))
+    : 25
+
+  const totalAnomalies = diagnostics
+    ? diagnostics.anomalies.orphanedBlobsCount +
+      diagnostics.anomalies.brokenAttachmentsCount +
+      diagnostics.anomalies.danglingParentTasksCount +
+      diagnostics.anomalies.brokenDependenciesCount +
+      diagnostics.anomalies.desyncedDurationsCount +
+      diagnostics.anomalies.orphanedHabitEntriesCount +
+      diagnostics.anomalies.orphanedTimeEntriesCount
+    : 0
 
   return (
     <>
@@ -431,7 +583,7 @@ export function SettingsPage() {
           </CardBody>
         </Card>
 
-        {/* ------------------------------------------------------ appearance -- */}
+        {/* ------------------------------------------------------ appearance & perf -- */}
         <Card>
           <CardHeader
             title={t('setAppearance')}
@@ -538,6 +690,28 @@ export function SettingsPage() {
                 </div>
               </div>
             </div>
+
+            {/* Performance and Motion Options */}
+            <div className="grid gap-3 sm:grid-cols-2 pt-2 border-t border-border/40">
+              <div className="rounded-lg border border-border/70 bg-card p-3.5 shadow-2xs">
+                <Toggle
+                  checked={appearance.reducedMotion}
+                  onChange={appearance.setReducedMotion}
+                  label={t('setReducedMotion')}
+                  description={t('setReducedMotionDesc')}
+                  icon={<Zap className="size-4 text-accent" />}
+                />
+              </div>
+              <div className="rounded-lg border border-border/70 bg-card p-3.5 shadow-2xs">
+                <Toggle
+                  checked={appearance.highPerformance}
+                  onChange={appearance.setHighPerformance}
+                  label={t('setHighPerfMode')}
+                  description={t('setHighPerfModeDesc')}
+                  icon={<ShieldCheck className="size-4 text-accent" />}
+                />
+              </div>
+            </div>
           </CardBody>
         </Card>
 
@@ -555,6 +729,230 @@ export function SettingsPage() {
               options={LANGUAGES.map((l) => ({ value: l.value, label: l.label }))}
               onChange={setLanguage}
             />
+          </CardBody>
+        </Card>
+
+        {/* ------------------------------ database health & optimization -- */}
+        <Card className="border-accent/30 shadow-xs">
+          <CardHeader
+            title={t('setDbHealth')}
+            description={t('setDbHealthDesc')}
+            icon={<Sparkles className="size-4 text-accent" />}
+            actions={
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={diagLoading}
+                  onClick={() => void runDiagnostics()}
+                >
+                  <RotateCcw className={`size-3.5 ${diagLoading ? 'animate-spin' : ''}`} />
+                  {t('setScanDb')}
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={optimizing}
+                  onClick={() => void handleOptimize()}
+                >
+                  <Sparkles className="size-3.5" />
+                  {optimizing ? t('setOptimizing') : t('setOptimizeDb')}
+                </Button>
+              </div>
+            }
+          />
+          <CardBody className="flex flex-col gap-4">
+            {/* Health Score Overview */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-xl border border-border/60 bg-muted/30 p-4">
+              <div className="flex items-center gap-3.5">
+                <div
+                  className={`flex size-13 shrink-0 items-center justify-center rounded-2xl font-bold text-lg tabular-nums border ${
+                    diagnostics && diagnostics.healthScore >= 90
+                      ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-500'
+                      : diagnostics && diagnostics.healthScore >= 75
+                        ? 'border-amber-500/30 bg-amber-500/15 text-amber-500'
+                        : 'border-rose-500/30 bg-rose-500/15 text-rose-500'
+                  }`}
+                >
+                  {diagnostics ? `${diagnostics.healthScore}%` : '—'}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-semibold text-foreground text-sm">{t('setHealthScore')}</h4>
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        diagnostics && diagnostics.healthScore >= 90
+                          ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                          : diagnostics && diagnostics.healthScore >= 75
+                            ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                            : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
+                      }`}
+                    >
+                      {diagnostics && diagnostics.healthScore >= 90
+                        ? t('setHealthOptimal')
+                        : diagnostics && diagnostics.healthScore >= 75
+                          ? t('setHealthGood')
+                          : t('setHealthNeedsAttention')}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {totalAnomalies === 0
+                      ? t('setNoAnomalies')
+                      : t('setAnomaliesDetected', { count: totalAnomalies })}
+                  </p>
+                </div>
+              </div>
+
+              {/* Quick Anomaly Badges */}
+              <div className="flex flex-wrap gap-1.5 sm:justify-end">
+                {diagnostics && diagnostics.anomalies.orphanedBlobsCount > 0 ? (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-2xs font-medium text-amber-500 border border-amber-500/20">
+                    <span>{diagnostics.anomalies.orphanedBlobsCount}</span>
+                    <span>{t('setOrphanBlobs')}</span>
+                  </span>
+                ) : null}
+                {diagnostics &&
+                diagnostics.anomalies.danglingParentTasksCount + diagnostics.anomalies.brokenDependenciesCount > 0 ? (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-rose-500/10 px-2 py-1 text-2xs font-medium text-rose-500 border border-rose-500/20">
+                    <span>
+                      {diagnostics.anomalies.danglingParentTasksCount + diagnostics.anomalies.brokenDependenciesCount}
+                    </span>
+                    <span>{t('setBrokenRefs')}</span>
+                  </span>
+                ) : null}
+                {diagnostics && diagnostics.anomalies.desyncedDurationsCount > 0 ? (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-2xs font-medium text-amber-500 border border-amber-500/20">
+                    <span>{diagnostics.anomalies.desyncedDurationsCount}</span>
+                    <span>{t('setDesyncedDurations')}</span>
+                  </span>
+                ) : null}
+                {totalAnomalies === 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-500 border border-emerald-500/20">
+                    <CheckCircle2 className="size-3.5" />
+                    <span>100% OK</span>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Storage Breakdown Multi-segment bar */}
+            <div>
+              <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
+                <span className="font-medium text-foreground">{t('setStorageBreakdown')}</span>
+                <span>{storage ? formatBytes(storage.usage) : '—'}</span>
+              </div>
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted/60 flex gap-0.5">
+                <div
+                  style={{ width: `${tasksPct}%` }}
+                  className="bg-indigo-500 h-full transition-all rounded-s-full"
+                  title={`${t('setTasksAndProjects')}: ${diagnostics?.breakdown.tasksCount ?? 0}`}
+                />
+                <div
+                  style={{ width: `${filesPct}%` }}
+                  className="bg-emerald-500 h-full transition-all"
+                  title={`${t('setFilesAndBlobs')}: ${diagnostics?.breakdown.attachmentsCount ?? 0}`}
+                />
+                <div
+                  style={{ width: `${timePct}%` }}
+                  className="bg-amber-500 h-full transition-all"
+                  title={`${t('setTimeAndHabits')}: ${diagnostics?.breakdown.timeEntriesCount ?? 0}`}
+                />
+                <div
+                  style={{ width: `${actPct}%` }}
+                  className="bg-sky-500 h-full transition-all rounded-e-full"
+                  title={`${t('setActivityLogs')}: ${diagnostics?.breakdown.activityLogsCount ?? 0}`}
+                />
+              </div>
+
+              {/* Legend Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3 text-xs">
+                <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-2.5 py-1.5">
+                  <span className="size-2 rounded-full bg-indigo-500 shrink-0" />
+                  <div className="truncate">
+                    <p className="text-2xs text-muted-foreground truncate">{t('setTasksAndProjects')}</p>
+                    <p className="font-semibold text-foreground tabular-nums">
+                      {(diagnostics?.breakdown.tasksCount ?? 0) + (diagnostics?.breakdown.projectsCount ?? 0)}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-2.5 py-1.5">
+                  <span className="size-2 rounded-full bg-emerald-500 shrink-0" />
+                  <div className="truncate">
+                    <p className="text-2xs text-muted-foreground truncate">{t('setFilesAndBlobs')}</p>
+                    <p className="font-semibold text-foreground tabular-nums">
+                      {diagnostics?.breakdown.attachmentsCount ?? 0} (
+                      {diagnostics ? formatBytes(diagnostics.breakdown.blobsTotalBytes) : '0'})
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-2.5 py-1.5">
+                  <span className="size-2 rounded-full bg-amber-500 shrink-0" />
+                  <div className="truncate">
+                    <p className="text-2xs text-muted-foreground truncate">{t('setTimeAndHabits')}</p>
+                    <p className="font-semibold text-foreground tabular-nums">
+                      {(diagnostics?.breakdown.timeEntriesCount ?? 0) + (diagnostics?.breakdown.habitsCount ?? 0)}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-2.5 py-1.5">
+                  <span className="size-2 rounded-full bg-sky-500 shrink-0" />
+                  <div className="truncate">
+                    <p className="text-2xs text-muted-foreground truncate">{t('setActivityLogs')}</p>
+                    <p className="font-semibold text-foreground tabular-nums">
+                      {diagnostics?.breakdown.activityLogsCount ?? 0}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+
+        {/* ------------------------- performance & retention policy -- */}
+        <Card>
+          <CardHeader
+            title={t('setRetentionAndPerformance')}
+            description={t('setRetentionDesc')}
+            icon={<Clock className="size-4" />}
+          />
+          <CardBody className="flex flex-col gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-2 rounded-lg border border-border/70 bg-card p-3.5 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-foreground">{t('setActivityRetention')}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={pruningLogs}
+                    onClick={() => void handlePruneLogs()}
+                  >
+                    <Trash2 className="size-3" />
+                    {t('setPruneActivityNow')}
+                  </Button>
+                </div>
+                <p className="text-2xs text-muted-foreground">{t('setActivityRetentionDesc')}</p>
+                <SegmentedControl
+                  value={String(activityRetentionDays)}
+                  size="sm"
+                  options={[
+                    { value: '30', label: t('setKeep30Days') },
+                    { value: '90', label: t('setKeep90Days') },
+                    { value: '0', label: t('setKeepAll') },
+                  ]}
+                  onChange={(v) => setActivityRetentionDays(Number(v))}
+                />
+              </div>
+
+              <div className="rounded-lg border border-border/70 bg-card p-3.5 shadow-2xs flex flex-col justify-center">
+                <Toggle
+                  checked={autoArchiveCompleted}
+                  onChange={setAutoArchiveCompleted}
+                  label={t('setAutoArchiveCompleted')}
+                  description={t('setAutoArchiveDesc')}
+                  icon={<History className="size-4 text-accent" />}
+                />
+              </div>
+            </div>
           </CardBody>
         </Card>
 
@@ -589,6 +987,40 @@ export function SettingsPage() {
                 hint={lastExportName ?? t('setNoExportYet')}
                 icon={<Download className="size-4" />}
               />
+            </div>
+
+            {/* Local Snapshot / Restore Point */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-lg border border-border/70 bg-card p-3.5 shadow-2xs">
+              <div className="flex items-center gap-3">
+                <Clock className="size-4 text-accent shrink-0" />
+                <div>
+                  <p className="text-xs font-medium text-foreground">{t('setLocalSnapshot')}</p>
+                  <p className="text-2xs text-muted-foreground">
+                    {snapshotMeta
+                      ? t('setLastSnapshotTime', {
+                          time: new Date(snapshotMeta.savedAt).toLocaleDateString() + ' ' + new Date(snapshotMeta.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        })
+                      : t('setNoSnapshot')}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => void handleCreateSnapshot()} disabled={busy}>
+                  <Save className="size-3.5" />
+                  {t('setCreateSnapshot')}
+                </Button>
+                {snapshotMeta && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setRestoreSnapshotOpen(true)}
+                    disabled={busy}
+                  >
+                    <RotateCcw className="size-3.5" />
+                    {t('setRestoreSnapshot')}
+                  </Button>
+                )}
+              </div>
             </div>
 
             <div className="flex flex-wrap items-end gap-3">
@@ -668,6 +1100,19 @@ export function SettingsPage() {
       </div>
 
       <ConfirmDialog
+        open={restoreSnapshotOpen}
+        onClose={() => setRestoreSnapshotOpen(false)}
+        destructive={true}
+        confirmLabel={t('setRestoreSnapshot')}
+        cancelLabel={t('cCancel')}
+        onConfirm={() => void handleRestoreSnapshot()}
+        title={t('setSnapshotConfirmTitle')}
+        message={t('setSnapshotConfirmMsg', {
+          time: snapshotMeta ? new Date(snapshotMeta.savedAt).toLocaleString() : '',
+        })}
+      />
+
+      <ConfirmDialog
         open={resetSettingsOpen}
         onClose={() => setResetSettingsOpen(false)}
         destructive={false}
@@ -689,6 +1134,7 @@ export function SettingsPage() {
         onConfirm={async () => {
           await workspaceRepo.clearContent(workspace.id)
           await refresh()
+          await runDiagnostics()
           toast.success(t('toastContentCleared'))
           setClearOpen(false)
         }}

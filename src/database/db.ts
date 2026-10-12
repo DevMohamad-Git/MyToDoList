@@ -85,13 +85,24 @@ export class MomentumDB extends Dexie {
       meta: 'key',
       folders: 'workspaceId',
     })
+
+    // v2 — High-performance compound indexes, temporal query support, removal of invalid boolean keys.
+    this.version(2).stores({
+      tasks:
+        'id, workspaceId, [workspaceId+status], [workspaceId+projectId], [workspaceId+parentTaskId], [workspaceId+dueDate], [workspaceId+startDate], [workspaceId+goalId], [workspaceId+createdAt], [workspaceId+completedAt], [workspaceId+order], parentTaskId, projectId, goalId, status, dueDate, startDate, order, createdAt, completedAt, recurrenceSourceId',
+      habits: 'id, workspaceId, [workspaceId+order], order, createdAt',
+      activity:
+        'id, workspaceId, [workspaceId+day], [workspaceId+entityId], [workspaceId+createdAt], entityId, type, day, createdAt',
+      focusSessions:
+        'id, workspaceId, [workspaceId+day], [workspaceId+taskId], [workspaceId+startTime], taskId, projectId, day, startTime',
+    })
   }
 }
 
 export const db = new MomentumDB()
 
 /** Schema version the running code expects; surfaced in Settings → Storage. */
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 
 /**
  * Open the database, converting the two failure modes that are actually

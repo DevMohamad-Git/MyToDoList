@@ -202,8 +202,17 @@ export const focusRepo = {
   },
 
   async recent(workspaceId: ID, limit = 20): Promise<FocusSession[]> {
-    const rows = await db.focusSessions.where('workspaceId').equals(workspaceId).toArray()
-    return rows.sort((a, b) => b.startTime.localeCompare(a.startTime)).slice(0, limit)
+    try {
+      return await db.focusSessions
+        .where('[workspaceId+startTime]')
+        .between([workspaceId, ''], [workspaceId, '\uffff'], true, true)
+        .reverse()
+        .limit(limit)
+        .toArray()
+    } catch {
+      const rows = await db.focusSessions.where('workspaceId').equals(workspaceId).toArray()
+      return rows.sort((a, b) => b.startTime.localeCompare(a.startTime)).slice(0, limit)
+    }
   },
 
   forTask(taskId: ID) {

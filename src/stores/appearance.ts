@@ -18,9 +18,13 @@ interface AppearanceState {
   theme: ThemeMode
   accent: AccentKey
   density: Density
+  reducedMotion: boolean
+  highPerformance: boolean
   setTheme: (theme: ThemeMode) => void
   setAccent: (accent: AccentKey) => void
   setDensity: (density: Density) => void
+  setReducedMotion: (reducedMotion: boolean) => void
+  setHighPerformance: (highPerformance: boolean) => void
 }
 
 function prefersDark(): boolean {
@@ -28,12 +32,20 @@ function prefersDark(): boolean {
 }
 
 /** Push the current preferences onto <html> where the CSS variables read them. */
-export function applyAppearance(state: Pick<AppearanceState, 'theme' | 'accent' | 'density'>) {
+export function applyAppearance(
+  state: Pick<AppearanceState, 'theme' | 'accent' | 'density' | 'reducedMotion' | 'highPerformance'>,
+) {
   const root = document.documentElement
   const dark = state.theme === 'dark' || (state.theme === 'system' && prefersDark())
   root.classList.toggle('dark', dark)
   root.dataset.accent = state.accent
   root.dataset.density = state.density
+  root.classList.toggle('reduce-motion', Boolean(state.reducedMotion))
+  if (state.highPerformance) {
+    root.dataset.perf = 'high'
+  } else {
+    delete root.dataset.perf
+  }
 }
 
 export const useAppearance = create<AppearanceState>()(
@@ -42,13 +54,23 @@ export const useAppearance = create<AppearanceState>()(
       theme: 'system',
       accent: 'indigo',
       density: 'comfortable',
+      reducedMotion: false,
+      highPerformance: false,
       setTheme: (theme) => set({ theme }),
       setAccent: (accent) => set({ accent }),
       setDensity: (density) => set({ density }),
+      setReducedMotion: (reducedMotion) => set({ reducedMotion }),
+      setHighPerformance: (highPerformance) => set({ highPerformance }),
     }),
     {
       name: 'momentum.appearance',
-      partialize: (s) => ({ theme: s.theme, accent: s.accent, density: s.density }),
+      partialize: (s) => ({
+        theme: s.theme,
+        accent: s.accent,
+        density: s.density,
+        reducedMotion: s.reducedMotion,
+        highPerformance: s.highPerformance,
+      }),
     },
   ),
 )
