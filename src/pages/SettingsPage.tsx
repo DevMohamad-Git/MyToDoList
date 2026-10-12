@@ -1,15 +1,31 @@
 import { useEffect, useState } from 'react'
 import {
+  Award,
+  Bell,
+  Check,
+  Coffee,
   Database,
   Download,
+  FolderOpen,
+  HardDrive,
+  History,
+  Hourglass,
   Languages,
+  Laptop,
+  LayoutGrid,
+  Maximize2,
+  Minimize2,
+  Moon,
   Palette,
+  Paperclip,
   RotateCcw,
   Save,
   Settings as SettingsIcon,
+  Sun,
   Timer,
   Trash2,
   Upload,
+  Zap,
 } from 'lucide-react'
 import {
   Button,
@@ -30,6 +46,7 @@ import {
 } from '@/components/ui'
 import {
   ACCENT_COLORS,
+  DEFAULT_SCORING_WEIGHTS,
 } from '@/config/constants'
 import { LANGUAGES, t, useI18n, useT, type TranslationKey } from '@/i18n'
 import { estimateStorage, SCHEMA_VERSION } from '@/database/db'
@@ -69,6 +86,11 @@ export function SettingsPage() {
   const [description, setDescription] = useState(workspace.description)
   const [busy, setBusy] = useState(false)
 
+  useEffect(() => {
+    setName(workspace.name)
+    setDescription(workspace.description)
+  }, [workspace.id, workspace.name, workspace.description])
+
   const appearance = useAppearance()
   const [exportOptions, setExportOptions] = useState<Required<ExportOptions>>({
     includeAttachments: false,
@@ -77,6 +99,7 @@ export function SettingsPage() {
   const [clearOpen, setClearOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [resetAchievementsOpen, setResetAchievementsOpen] = useState(false)
+  const [resetSettingsOpen, setResetSettingsOpen] = useState(false)
   const [storage, setStorage] = useState<{ usage: number; quota: number } | null>(null)
   const [lastExportName, setLastExportName] = useState<string | null>(null)
 
@@ -226,9 +249,17 @@ export function SettingsPage() {
                 <WorkdayPicker
                   days={workspace.settings.planning.workingHours.days}
                   onChange={(days) => void patchSettings({ planning: { workingHours: { days } } })}
+                  weekStartsOn={workspace.settings.planning.weekStartsOn}
+                  language={language}
                 />
               </Field>
             </div>
+            {workspace.settings.planning.workingHours.start >= workspace.settings.planning.workingHours.end && (
+              <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-500">
+                <span>⚠️</span>
+                <span>{t('setWorkingHoursInvalid')}</span>
+              </div>
+            )}
             <div className="grid gap-4 sm:grid-cols-3">
               <Slider
                 label={t('setDailyCapacity')}
@@ -263,43 +294,78 @@ export function SettingsPage() {
 
         {/* --------------------------------------------------------- scoring -- */}
         <Card>
-          <CardHeader title={t('setDailyScore')} description={t('setScoreDesc')} />
-          <CardBody className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {(
-              [
-                ['taskCompletion', 'compTaskCompletion'],
-                ['priorityCompletion', 'compPriorityCompletion'],
-                ['deadlineDiscipline', 'compDeadlineDiscipline'],
-                ['timeEfficiency', 'compTimeEfficiency'],
-                ['focusTime', 'compFocusTime'],
-                ['consistency', 'compConsistency'],
-              ] as const
-            ).map(([key, labelKey]) => (
-              <Slider
-                key={key}
-                label={t(labelKey)}
-                suffix="%"
-                min={0}
-                max={100}
-                value={workspace.settings.scoring.weights[key]}
-                onChange={(v) =>
-                  void patchSettings({
-                    scoring: {
-                      weights: {
-                        ...workspace.settings.scoring.weights,
-                        [key]: v,
-                      },
-                    },
-                  })
+          <CardHeader
+            title={t('setDailyScore')}
+            description={t('setScoreDesc')}
+            icon={<Award className="size-4 text-accent" />}
+            actions={
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  void patchSettings(
+                    { scoring: { weights: { ...DEFAULT_SCORING_WEIGHTS } } },
+                    t('toastWsUpdated'),
+                  )
                 }
-              />
-            ))}
+              >
+                <RotateCcw className="size-3.5" />
+                {t('setResetWeights')}
+              </Button>
+            }
+          />
+          <CardBody className="flex flex-col gap-4">
+            <div className="flex items-center justify-between rounded-lg border border-border/40 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              <span>
+                {t('setScoreTotal', {
+                  total: Object.values(workspace.settings.scoring.weights).reduce((a, b) => a + b, 0),
+                })}
+              </span>
+              <span className="font-semibold text-foreground tabular-nums">
+                {Object.values(workspace.settings.scoring.weights).reduce((a, b) => a + b, 0)}%
+              </span>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {(
+                [
+                  ['taskCompletion', 'compTaskCompletion'],
+                  ['priorityCompletion', 'compPriorityCompletion'],
+                  ['deadlineDiscipline', 'compDeadlineDiscipline'],
+                  ['timeEfficiency', 'compTimeEfficiency'],
+                  ['focusTime', 'compFocusTime'],
+                  ['consistency', 'compConsistency'],
+                ] as const
+              ).map(([key, labelKey]) => (
+                <Slider
+                  key={key}
+                  label={t(labelKey)}
+                  suffix="%"
+                  min={0}
+                  max={100}
+                  value={workspace.settings.scoring.weights[key]}
+                  onChange={(v) =>
+                    void patchSettings({
+                      scoring: {
+                        weights: {
+                          ...workspace.settings.scoring.weights,
+                          [key]: v,
+                        },
+                      },
+                    })
+                  }
+                />
+              ))}
+            </div>
           </CardBody>
         </Card>
 
         {/* -------------------------------------------------------- pomodoro -- */}
         <Card>
-          <CardHeader title={t('setFocusTimer')} description={t('setFocusTimerDesc')} />
+          <CardHeader
+            title={t('setFocusTimer')}
+            description={t('setFocusTimerDesc')}
+            icon={<Hourglass className="size-4 text-accent" />}
+          />
           <CardBody className="flex flex-col gap-4">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Slider
@@ -336,22 +402,31 @@ export function SettingsPage() {
                 onChange={(v) => void patchSettings({ pomodoro: { cyclesBeforeLongBreak: v } })}
               />
             </div>
-            <div className="grid gap-2 sm:grid-cols-3">
-              <Toggle
-                checked={workspace.settings.pomodoro.autoStartBreaks}
-                onChange={(v) => void patchSettings({ pomodoro: { autoStartBreaks: v } })}
-                label={t('setAutoBreaks')}
-              />
-              <Toggle
-                checked={workspace.settings.pomodoro.autoStartNextWork}
-                onChange={(v) => void patchSettings({ pomodoro: { autoStartNextWork: v } })}
-                label={t('setAutoNext')}
-              />
-              <Toggle
-                checked={workspace.settings.pomodoro.soundEnabled}
-                onChange={(v) => void patchSettings({ pomodoro: { soundEnabled: v } })}
-                label={t('setChime')}
-              />
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border border-border/70 bg-card p-3.5 shadow-2xs">
+                <Toggle
+                  checked={workspace.settings.pomodoro.autoStartBreaks}
+                  onChange={(v) => void patchSettings({ pomodoro: { autoStartBreaks: v } })}
+                  label={t('setAutoBreaks')}
+                  icon={<Coffee className="size-4 text-accent" />}
+                />
+              </div>
+              <div className="rounded-lg border border-border/70 bg-card p-3.5 shadow-2xs">
+                <Toggle
+                  checked={workspace.settings.pomodoro.autoStartNextWork}
+                  onChange={(v) => void patchSettings({ pomodoro: { autoStartNextWork: v } })}
+                  label={t('setAutoNext')}
+                  icon={<Zap className="size-4 text-accent" />}
+                />
+              </div>
+              <div className="rounded-lg border border-border/70 bg-card p-3.5 shadow-2xs">
+                <Toggle
+                  checked={workspace.settings.pomodoro.soundEnabled}
+                  onChange={(v) => void patchSettings({ pomodoro: { soundEnabled: v } })}
+                  label={t('setChime')}
+                  icon={<Bell className="size-4 text-accent" />}
+                />
+              </div>
             </div>
           </CardBody>
         </Card>
@@ -371,9 +446,33 @@ export function SettingsPage() {
                   value={appearance.theme}
                   size="md"
                   options={[
-                    { value: 'system', label: t('setSystem') },
-                    { value: 'light', label: t('setLight') },
-                    { value: 'dark', label: t('setDark') },
+                    {
+                      value: 'system',
+                      label: (
+                        <span className="inline-flex items-center gap-1.5">
+                          <Laptop className="size-3.5" />
+                          {t('setSystem')}
+                        </span>
+                      ),
+                    },
+                    {
+                      value: 'light',
+                      label: (
+                        <span className="inline-flex items-center gap-1.5">
+                          <Sun className="size-3.5" />
+                          {t('setLight')}
+                        </span>
+                      ),
+                    },
+                    {
+                      value: 'dark',
+                      label: (
+                        <span className="inline-flex items-center gap-1.5">
+                          <Moon className="size-3.5" />
+                          {t('setDark')}
+                        </span>
+                      ),
+                    },
                   ]}
                   onChange={appearance.setTheme}
                 />
@@ -384,9 +483,33 @@ export function SettingsPage() {
                   value={appearance.density}
                   size="md"
                   options={[
-                    { value: 'compact', label: t('setCompact') },
-                    { value: 'comfortable', label: t('setComfortable') },
-                    { value: 'spacious', label: t('setSpacious') },
+                    {
+                      value: 'compact',
+                      label: (
+                        <span className="inline-flex items-center gap-1.5">
+                          <Minimize2 className="size-3.5" />
+                          {t('setCompact')}
+                        </span>
+                      ),
+                    },
+                    {
+                      value: 'comfortable',
+                      label: (
+                        <span className="inline-flex items-center gap-1.5">
+                          <LayoutGrid className="size-3.5" />
+                          {t('setComfortable')}
+                        </span>
+                      ),
+                    },
+                    {
+                      value: 'spacious',
+                      label: (
+                        <span className="inline-flex items-center gap-1.5">
+                          <Maximize2 className="size-3.5" />
+                          {t('setSpacious')}
+                        </span>
+                      ),
+                    },
                   ]}
                   onChange={appearance.setDensity}
                 />
@@ -402,13 +525,15 @@ export function SettingsPage() {
                       aria-label={`Accent ${a.label}`}
                       aria-pressed={appearance.accent === a.key}
                       onClick={() => appearance.setAccent(a.key)}
-                      className="size-7 rounded-full border-2 transition-transform hover:scale-110"
+                      className="flex size-7 items-center justify-center rounded-full border-2 transition-transform hover:scale-110"
                       style={{
                         backgroundColor: `hsl(${a.hue})`,
                         borderColor:
                           appearance.accent === a.key ? 'var(--color-foreground)' : 'transparent',
                       }}
-                    />
+                    >
+                      {appearance.accent === a.key ? <Check className="size-3.5 text-white stroke-[2.5]" /> : null}
+                    </button>
                   ))}
                 </div>
               </div>
@@ -450,16 +575,19 @@ export function SettingsPage() {
                     ? t('setOfQuota', { q: formatBytes(storage.quota) })
                     : t('setEstUnavailable')
                 }
+                icon={<HardDrive className="size-4" />}
               />
               <StatTile
                 label={t('setSchemaVersion')}
                 value={`v${SCHEMA_VERSION}`}
                 hint={t('setLocalDb')}
+                icon={<Database className="size-4" />}
               />
               <StatTile
                 label={t('setLastExport')}
                 value={lastExportName ? t('setDone') : '—'}
                 hint={lastExportName ?? t('setNoExportYet')}
+                icon={<Download className="size-4" />}
               />
             </div>
 
@@ -481,6 +609,7 @@ export function SettingsPage() {
                     else toast.error(result.error)
                   }}
                 >
+                  <FolderOpen className="size-4" />
                   {t('setLinkFolder')}
                 </Button>
               ) : (
@@ -488,18 +617,24 @@ export function SettingsPage() {
               )}
             </div>
 
-            <div className="flex flex-wrap gap-6">
-              <Toggle
-                checked={exportOptions.includeAttachments}
-                onChange={(v) => setExportOptions((o) => ({ ...o, includeAttachments: v }))}
-                label={t('setIncludeAttachments')}
-                description={t('setAttachDesc')}
-              />
-              <Toggle
-                checked={exportOptions.includeActivity}
-                onChange={(v) => setExportOptions((o) => ({ ...o, includeActivity: v }))}
-                label={t('setIncludeActivity')}
-              />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-border/70 bg-card p-3.5 shadow-2xs">
+                <Toggle
+                  checked={exportOptions.includeAttachments}
+                  onChange={(v) => setExportOptions((o) => ({ ...o, includeAttachments: v }))}
+                  label={t('setIncludeAttachments')}
+                  description={t('setAttachDesc')}
+                  icon={<Paperclip className="size-4 text-accent" />}
+                />
+              </div>
+              <div className="rounded-lg border border-border/70 bg-card p-3.5 shadow-2xs">
+                <Toggle
+                  checked={exportOptions.includeActivity}
+                  onChange={(v) => setExportOptions((o) => ({ ...o, includeActivity: v }))}
+                  label={t('setIncludeActivity')}
+                  icon={<History className="size-4 text-accent" />}
+                />
+              </div>
             </div>
           </CardBody>
         </Card>
@@ -512,18 +647,12 @@ export function SettingsPage() {
             icon={<Trash2 className="size-4 text-rose-400" />}
           />
           <CardBody className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              onClick={() =>
-                void workspaceRepo
-                  .resetSettings(workspace.id)
-                  .then(() => toast.success(t('toastSettingsReset')))
-              }
-            >
+            <Button variant="outline" onClick={() => setResetSettingsOpen(true)}>
               <RotateCcw className="size-4" />
               {t('setResetSettings')}
             </Button>
             <Button variant="outline" onClick={() => setResetAchievementsOpen(true)}>
+              <Award className="size-4 text-amber-500" />
               {t('setResetAchievements')}
             </Button>
             <Button variant="outline" onClick={() => setClearOpen(true)}>
@@ -539,10 +668,27 @@ export function SettingsPage() {
       </div>
 
       <ConfirmDialog
+        open={resetSettingsOpen}
+        onClose={() => setResetSettingsOpen(false)}
+        destructive={false}
+        confirmLabel={t('setResetSettings')}
+        cancelLabel={t('cCancel')}
+        onConfirm={async () => {
+          await workspaceRepo.resetSettings(workspace.id)
+          await refresh()
+          toast.success(t('toastSettingsReset'))
+          setResetSettingsOpen(false)
+        }}
+        title={t('setResetSettingsTitle')}
+        message={t('setResetSettingsMsg')}
+      />
+
+      <ConfirmDialog
         open={clearOpen}
         onClose={() => setClearOpen(false)}
         onConfirm={async () => {
           await workspaceRepo.clearContent(workspace.id)
+          await refresh()
           toast.success(t('toastContentCleared'))
           setClearOpen(false)
         }}
@@ -574,6 +720,7 @@ export function SettingsPage() {
         cancelLabel={t('cCancel')}
         onConfirm={async () => {
           await achievementRepo.reset(workspace.id)
+          await refresh()
           toast.success(t('toastAchReset'))
           setResetAchievementsOpen(false)
         }}
@@ -599,32 +746,55 @@ function timeToMinutes(value: string): number {
 function WorkdayPicker({
   days,
   onChange,
+  weekStartsOn = 1,
+  language = 'en',
 }: {
   days: WeekDay[]
   onChange: (days: WeekDay[]) => void
+  weekStartsOn?: WeekDay
+  language?: string
 }) {
-  const labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
-  const order: WeekDay[] = [1, 2, 3, 4, 5, 6, 0]
+  const isPersian = language === 'fa'
+  const order: WeekDay[] =
+    isPersian || weekStartsOn === 6
+      ? [6, 0, 1, 2, 3, 4, 5]
+      : weekStartsOn === 0
+        ? [0, 1, 2, 3, 4, 5, 6]
+        : [1, 2, 3, 4, 5, 6, 0]
+
+  const dayConfig: Record<WeekDay, { en: string; fa: string; key: TranslationKey }> = {
+    0: { en: 'S', fa: 'ی', key: 'wdSun' },
+    1: { en: 'M', fa: 'د', key: 'wdMon' },
+    2: { en: 'T', fa: 'س', key: 'wdTue' },
+    3: { en: 'W', fa: 'چ', key: 'wdWed' },
+    4: { en: 'T', fa: 'پ', key: 'wdThu' },
+    5: { en: 'F', fa: 'ج', key: 'wdFri' },
+    6: { en: 'S', fa: 'ش', key: 'wdSat' },
+  }
+
   return (
-    <div className="flex gap-1">
-      {order.map((day, i) => {
+    <div className="flex flex-wrap gap-1">
+      {order.map((day) => {
         const selected = days.includes(day)
+        const label = isPersian ? dayConfig[day].fa : dayConfig[day].en
+        const fullTitle = t(dayConfig[day].key)
         return (
           <button
             key={day}
             type="button"
+            title={fullTitle}
             aria-pressed={selected}
-            aria-label={t(`wd${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][day]}` as TranslationKey)}
+            aria-label={fullTitle}
             onClick={() =>
               onChange(selected ? days.filter((x) => x !== day) : [...days, day].sort())
             }
             className={`size-7 rounded-md border text-xs font-medium transition-colors ${
               selected
-                ? 'border-accent bg-accent/10 text-accent'
-                : 'border-border text-muted-foreground hover:text-foreground'
+                ? 'border-accent bg-accent/15 text-accent font-semibold'
+                : 'border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/40'
             }`}
           >
-            {labels[i]}
+            {label}
           </button>
         )
       })}

@@ -1,6 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
-  ArrowUpDown,
   Award,
   Brain,
   CalendarCheck,
@@ -41,7 +40,6 @@ import {
   computeLevelInfo,
   evaluateAchievements,
   TIER_CLASS,
-  TIER_XP,
   type AchievementProgress,
 } from '@/services/achievements'
 import { achievementRepo } from '@/storage/reviewRepo'

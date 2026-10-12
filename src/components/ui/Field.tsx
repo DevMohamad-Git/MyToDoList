@@ -125,38 +125,46 @@ export function Toggle({
   onChange,
   label,
   description,
+  icon,
   disabled,
+  className,
 }: {
   checked: boolean
   onChange: (checked: boolean) => void
   label: ReactNode
   description?: ReactNode
+  icon?: ReactNode
   disabled?: boolean
+  className?: string
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-1.5">
-      <div className="min-w-0">
-        <div className="text-sm font-medium">{label}</div>
-        {description ? (
-          <div className="mt-0.5 text-xs text-muted-foreground">{description}</div>
-        ) : null}
+    <div className={cn('flex items-center justify-between gap-3 py-1', className)}>
+      <div className="flex min-w-0 flex-1 items-start gap-2.5">
+        {icon ? <span className="mt-0.5 shrink-0 text-muted-foreground">{icon}</span> : null}
+        <div className="min-w-0">
+          <div className="text-sm font-medium leading-snug">{label}</div>
+          {description ? (
+            <div className="mt-0.5 text-xs text-muted-foreground leading-normal">{description}</div>
+          ) : null}
+        </div>
       </div>
       <button
         type="button"
         role="switch"
+        dir="ltr"
         aria-checked={checked}
         aria-label={typeof label === 'string' ? label : undefined}
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cn(
-          'relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50',
-          checked ? 'bg-accent' : 'bg-muted border border-border',
+          'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+          checked ? 'bg-accent' : 'bg-muted-foreground/30 dark:bg-muted',
         )}
       >
         <span
           className={cn(
-            'absolute top-0.5 size-4 rounded-full bg-white shadow transition-transform',
-            checked ? 'translate-x-4 rtl:-translate-x-4' : 'translate-x-0.5 rtl:-translate-x-0.5',
+            'pointer-events-none inline-block size-5 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out',
+            checked ? 'translate-x-5' : 'translate-x-0',
           )}
         />
       </button>

@@ -526,6 +526,12 @@ export const en = {
   setResetAchTitle: 'Reset earned achievements?',
   setResetAchMsg:
     'The earned ledger is cleared. Achievements are derived from your data, so anything still true will unlock again immediately.',
+  setResetSettingsTitle: 'Reset settings to defaults?',
+  setResetSettingsMsg:
+    'This will restore all planning, scoring and focus timer settings to their default values.',
+  setWorkingHoursInvalid: 'Work end time should be after start time',
+  setScoreTotal: 'Total weights: {total}% (auto-normalized to 100%)',
+  setResetWeights: 'Reset weights',
 
   /* --------------------------------------------------------- planner page -- */
   plannerTitle: 'Planner',
