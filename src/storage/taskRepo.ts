@@ -90,16 +90,79 @@ export const taskRepo = {
         .where('[workspaceId+projectId]')
         .equals([workspaceId, filter.projectId])
         .toArray()
-    } else if (filter.status?.length === 1) {
+    } else if (filter.status && filter.status.length === 1) {
       rows = await db.tasks
         .where('[workspaceId+status]')
         .equals([workspaceId, filter.status[0]])
+        .toArray()
+    } else if (filter.status && filter.status.length > 1) {
+      rows = await db.tasks
+        .where('[workspaceId+status]')
+        .anyOf(filter.status.map((s) => [workspaceId, s]))
         .toArray()
     } else {
       rows = await db.tasks.where('workspaceId').equals(workspaceId).toArray()
     }
     const now = new Date()
     return rows.filter((t) => matchesFilter(t, filter, now)).sort(compareTasks)
+  },
+
+  /**
+   * Fast workspace-level task status metrics (Inbox, Blocked, Overdue, Total Open).
+   * Not scoped to transient UI filters, providing true situational awareness.
+   */
+  async workspaceCounts(workspaceId: ID): Promise<{
+    inbox: number
+    blocked: number
+    overdue: number
+    open: number
+    total: number
+  }> {
+    const tasks = await db.tasks.where('workspaceId').equals(workspaceId).toArray()
+    const now = new Date()
+    let inbox = 0
+    let blocked = 0
+    let overdue = 0
+    let open = 0
+    for (const t of tasks) {
+      if (t.archived) continue
+      const isClosed = CLOSED_TASK_STATUSES.includes(t.status)
+      if (!isClosed) open++
+      if (t.status === 'inbox') inbox++
+      if (t.status === 'blocked') blocked++
+      if (!isClosed && t.dueDate && new Date(t.dueDate) < now) overdue++
+    }
+    return { inbox, blocked, overdue, open, total: tasks.length }
+  },
+
+  /**
+   * Aggregated metadata (subtasks counts and attachment counts) in one batch pass
+   * to avoid N+1 queries when rendering task list rows.
+   */
+  async getMetadataCounts(workspaceId: ID): Promise<{
+    subtasks: Map<ID, { total: number; completed: number }>
+    attachments: Map<ID, number>
+  }> {
+    const [tasks, attachments] = await Promise.all([
+      db.tasks.where('workspaceId').equals(workspaceId).toArray(),
+      db.attachments.where('workspaceId').equals(workspaceId).toArray(),
+    ])
+    const subtasks = new Map<ID, { total: number; completed: number }>()
+    for (const t of tasks) {
+      if (t.parentTaskId) {
+        const current = subtasks.get(t.parentTaskId) ?? { total: 0, completed: 0 }
+        current.total++
+        if (t.status === 'completed') current.completed++
+        subtasks.set(t.parentTaskId, current)
+      }
+    }
+    const attMap = new Map<ID, number>()
+    for (const a of attachments) {
+      if (a.taskId) {
+        attMap.set(a.taskId, (attMap.get(a.taskId) ?? 0) + 1)
+      }
+    }
+    return { subtasks, attachments: attMap }
   },
 
   subtasks(workspaceId: ID, parentTaskId: ID) {
@@ -221,6 +284,52 @@ export const taskRepo = {
 
   async updateMany(ids: ID[], patch: Partial<Task>): Promise<void> {
     for (const id of ids) await taskRepo.update(id, patch)
+  },
+
+  /**
+   * Bulk schedule or reschedule tasks within a single atomic Dexie transaction.
+   * Minimizes table locking and eliminates live-query churn.
+   */
+  async bulkUpdateSchedule(
+    patches: { id: ID; startDate?: string | null; status?: TaskStatus; estimatedDuration?: number }[],
+  ): Promise<void> {
+    if (patches.length === 0) return
+    const ids = patches.map((p) => p.id)
+    await db.transaction('rw', [db.tasks, db.activity], async () => {
+      const existing = await db.tasks.bulkGet(ids)
+      const now = nowISO()
+      const updatedTasks: Task[] = []
+
+      for (let i = 0; i < patches.length; i++) {
+        const patch = patches[i]
+        const before = existing[i]
+        if (!before) continue
+
+        const next: Task = {
+          ...before,
+          ...(patch.startDate !== undefined ? { startDate: patch.startDate } : {}),
+          ...(patch.status !== undefined ? { status: patch.status } : {}),
+          ...(patch.estimatedDuration !== undefined ? { estimatedDuration: patch.estimatedDuration } : {}),
+          updatedAt: now,
+        }
+        updatedTasks.push(next)
+
+        if (patch.startDate !== undefined && patch.startDate !== before.startDate) {
+          await logActivity(
+            next.workspaceId,
+            'task_rescheduled',
+            'task',
+            patch.id,
+            patch.startDate
+              ? `Scheduled “${next.title}” for ${toDayKey(patch.startDate)}`
+              : `Unscheduled “${next.title}”`,
+            { from: before.startDate, to: patch.startDate },
+          )
+        }
+      }
+
+      await db.tasks.bulkPut(updatedTasks)
+    })
   },
 
   /**
@@ -417,6 +526,18 @@ export const taskRepo = {
       `Deleted “${task.title}”${ids.length > 1 ? ` and ${ids.length - 1} subtask(s)` : ''}`,
     )
     return { tasks: ids.length, attachments, timeEntries }
+  },
+
+  /** Re-insert a previously deleted task (for Undo actions). */
+  async restore(task: Task): Promise<void> {
+    await db.tasks.put(task)
+    await logActivity(
+      task.workspaceId,
+      'task_created',
+      'task',
+      task.id,
+      `Restored task “${task.title}”`,
+    )
   },
 
   /** Ids of a task plus all descendants, breadth-first. */
