@@ -145,12 +145,84 @@ export function activeDayKeys(snapshot: WorkspaceSnapshot): Set<DayKey> {
   return set
 }
 
+export interface DayComputeContext {
+  active: Set<DayKey>
+  workloadByDay: Map<DayKey, Task[]>
+  dueByDay: Map<DayKey, Task[]>
+  entriesByDay: Map<DayKey, TimeEntry[]>
+  sessionsByDay: Map<DayKey, FocusSession[]>
+}
+
+/** Pre-index the snapshot in a single O(T + E + S) pass for high-throughput analytics. */
+export function buildAnalyticsIndex(snapshot: WorkspaceSnapshot): DayComputeContext {
+  const active = new Set<DayKey>()
+  const entriesByDay = new Map<DayKey, TimeEntry[]>()
+  const sessionsByDay = new Map<DayKey, FocusSession[]>()
+  const dueByDay = new Map<DayKey, Task[]>()
+  const workloadByDay = new Map<DayKey, Task[]>()
+
+  for (const entry of snapshot.timeEntries) {
+    if (entry.duration > 0) active.add(entry.day)
+    let list = entriesByDay.get(entry.day)
+    if (!list) {
+      list = []
+      entriesByDay.set(entry.day, list)
+    }
+    list.push(entry)
+  }
+
+  for (const session of snapshot.focusSessions) {
+    if (session.duration > 0) active.add(session.day)
+    let list = sessionsByDay.get(session.day)
+    if (!list) {
+      list = []
+      sessionsByDay.set(session.day, list)
+    }
+    list.push(session)
+  }
+
+  for (const task of snapshot.tasks) {
+    if (task.completedAt) active.add(toDayKey(task.completedAt))
+    if (task.archived || task.parentTaskId) continue
+
+    const sDay = task.startDate ? toDayKey(task.startDate) : null
+    const dDay = task.dueDate ? toDayKey(task.dueDate) : null
+    const cDay = task.completedAt ? toDayKey(task.completedAt) : null
+
+    if (dDay && task.status !== 'cancelled') {
+      let list = dueByDay.get(dDay)
+      if (!list) {
+        list = []
+        dueByDay.set(dDay, list)
+      }
+      list.push(task)
+    }
+
+    const daysForWorkload = new Set<DayKey>()
+    if (sDay) daysForWorkload.add(sDay)
+    if (dDay) daysForWorkload.add(dDay)
+    if (cDay) daysForWorkload.add(cDay)
+
+    for (const d of daysForWorkload) {
+      let list = workloadByDay.get(d)
+      if (!list) {
+        list = []
+        workloadByDay.set(d, list)
+      }
+      list.push(task)
+    }
+  }
+
+  return { active, entriesByDay, sessionsByDay, dueByDay, workloadByDay }
+}
+
 export function computeDayStats(
   snapshot: WorkspaceSnapshot,
   day: DayKey,
   now: Date = new Date(),
+  context?: DayComputeContext,
 ): DayStats {
-  const workload = dayWorkload(snapshot, day)
+  const workload = context?.workloadByDay ? (context.workloadByDay.get(day) ?? []) : dayWorkload(snapshot, day)
   const completed = workload.filter((t) => t.status === 'completed')
   const open = workload.filter((t) => !CLOSED_TASK_STATUSES.includes(t.status))
 
@@ -160,15 +232,15 @@ export function computeDayStats(
     .reduce((acc, t) => acc + (t.estimatedDuration ?? settings.planning.defaultTaskDuration), 0)
   const plannedMinutes = workload.reduce((acc, t) => acc + (t.estimatedDuration ?? 0), 0)
 
-  const dayEntries = snapshot.timeEntries.filter((e) => e.day === day)
+  const dayEntries = context?.entriesByDay ? (context.entriesByDay.get(day) ?? []) : snapshot.timeEntries.filter((e) => e.day === day)
   const actualMinutes = sum(dayEntries.map((e) => e.duration))
-  const daySessions = snapshot.focusSessions.filter((s) => s.day === day)
+  const daySessions = context?.sessionsByDay ? (context.sessionsByDay.get(day) ?? []) : snapshot.focusSessions.filter((s) => s.day === day)
   const focusMinutes = sum(daySessions.map((s) => s.duration))
 
   // Deadline discipline is judged on deadlines that actually fell due this day.
-  const dueToday = snapshot.tasks.filter(
-    (t) => !t.archived && t.dueDate && toDayKey(t.dueDate) === day && t.status !== 'cancelled',
-  )
+  const dueToday = context?.dueByDay
+    ? (context.dueByDay.get(day) ?? [])
+    : snapshot.tasks.filter((t) => !t.archived && t.dueDate && toDayKey(t.dueDate) === day && t.status !== 'cancelled')
   const metDeadlines = dueToday.filter((t) => t.completedAt && t.completedAt <= t.dueDate!).length
   // An open task is only a *missed* deadline once the deadline has actually
   // passed. Counting work still due later today as missed would deflate today's
@@ -178,7 +250,7 @@ export function computeDayStats(
   ).length
 
   const consistencyWindow = 7
-  const active = activeDayKeys(snapshot)
+  const active = context?.active ?? activeDayKeys(snapshot)
   const windowEnd = fromDayKey(day)
   let activeDaysInWindow = 0
   for (let i = 0; i < consistencyWindow; i++) {
@@ -233,9 +305,11 @@ export function dayScoreSeries(
   snapshot: WorkspaceSnapshot,
   days: DayKey[],
   now: Date = new Date(),
+  context?: DayComputeContext,
 ): DayPoint[] {
+  const ctx = context ?? buildAnalyticsIndex(snapshot)
   return days.map((day) => {
-    const stats = computeDayStats(snapshot, day, now)
+    const stats = computeDayStats(snapshot, day, now, ctx)
     return {
       day,
       label: fromDayKey(day).toLocaleDateString(intlLocale(), { weekday: 'short', day: 'numeric' }),
@@ -278,33 +352,55 @@ export function computeRangeStats(
   snapshot: WorkspaceSnapshot,
   dayKeys: DayKey[],
   now: Date = new Date(),
+  context?: DayComputeContext,
 ): RangeStats {
-  const days = dayScoreSeries(snapshot, dayKeys, now)
+  const ctx = context ?? buildAnalyticsIndex(snapshot)
+  const days = dayScoreSeries(snapshot, dayKeys, now, ctx)
   const withData = days.filter((d) => !d.noData)
 
   const startDay = dayKeys[0] ?? toDayKey(now)
   const endDay = dayKeys[dayKeys.length - 1] ?? startDay
-  const inRange = (day: DayKey) => day >= startDay && day <= endDay
 
   const workloadIds = new Set<ID>()
   for (const day of dayKeys) {
-    for (const task of dayWorkload(snapshot, day)) workloadIds.add(task.id)
+    const list = ctx.workloadByDay.get(day)
+    if (list) {
+      for (const task of list) workloadIds.add(task.id)
+    }
   }
   const workload = snapshot.tasks.filter((t) => workloadIds.has(t.id))
   const completedTasks = workload.filter((t) => t.status === 'completed').length
 
-  const dueInRange = snapshot.tasks.filter(
-    (t) => !t.archived && t.dueDate && inRange(toDayKey(t.dueDate)) && t.status !== 'cancelled',
-  )
+  const dueInRange: Task[] = []
+  for (const day of dayKeys) {
+    const list = ctx.dueByDay.get(day)
+    if (list) {
+      for (const t of list) dueInRange.push(t)
+    }
+  }
+
   const metDeadlines = dueInRange.filter((t) => t.completedAt && t.completedAt <= t.dueDate!).length
-  // Same rule as `computeDayStats`: a deadline that has not yet arrived is not a miss.
   const missedDeadlines = dueInRange.filter((t) =>
     t.completedAt ? t.completedAt > t.dueDate! : new Date(t.dueDate!) < now,
   ).length
 
-  const focusMinutes = sum(snapshot.focusSessions.filter((s) => inRange(s.day)).map((s) => s.duration))
-  const focusSessions = snapshot.focusSessions.filter((s) => inRange(s.day) && s.duration > 0).length
-  const actualMinutes = sum(snapshot.timeEntries.filter((e) => inRange(e.day)).map((e) => e.duration))
+  let focusMinutes = 0
+  let focusSessions = 0
+  let actualMinutes = 0
+  for (const day of dayKeys) {
+    const sList = ctx.sessionsByDay.get(day)
+    if (sList) {
+      for (const s of sList) {
+        focusMinutes += s.duration
+        if (s.duration > 0) focusSessions++
+      }
+    }
+    const eList = ctx.entriesByDay.get(day)
+    if (eList) {
+      for (const e of eList) actualMinutes += e.duration
+    }
+  }
+
   const estimatedMinutes = sum(workload.map((t) => t.estimatedDuration ?? 0))
 
   const comparable = workload.filter(
@@ -314,8 +410,7 @@ export function computeRangeStats(
     ? round(average(comparable.map((t) => t.actualDuration / (t.estimatedDuration as number))), 2)
     : null
 
-  const active = activeDayKeys(snapshot)
-  const activeDays = dayKeys.filter((d) => active.has(d)).length
+  const activeDays = dayKeys.filter((d) => ctx.active.has(d)).length
 
   const { best, weakest } = bestAndWeakest(
     days.map((d) => ({ day: d.day, score: d.score, noData: d.noData })),
