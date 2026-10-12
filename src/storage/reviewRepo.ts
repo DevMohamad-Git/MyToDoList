@@ -111,6 +111,57 @@ export const achievementRepo = {
     return record
   },
 
+  /**
+   * Atomic batch synchronization:
+   * Inspects existing achievements in a single indexed read and bulk-adds
+   * only the newly unlocked items in a single Dexie transaction.
+   * Returns only newly earned records.
+   */
+  async syncUnlocked(
+    workspaceId: ID,
+    unlockedItems: Array<{ key: string; value: number; title: string }>,
+  ): Promise<EarnedAchievement[]> {
+    if (unlockedItems.length === 0) return []
+
+    const existingList = await db.achievements.where('workspaceId').equals(workspaceId).toArray()
+    const existingKeys = new Set(existingList.map((a) => a.achievementKey))
+
+    const newlyEarned: EarnedAchievement[] = []
+    const now = nowISO()
+
+    for (const item of unlockedItems) {
+      if (!existingKeys.has(item.key)) {
+        newlyEarned.push({
+          id: newId(),
+          workspaceId,
+          achievementKey: item.key,
+          earnedAt: now,
+          value: item.value,
+        })
+      }
+    }
+
+    if (newlyEarned.length > 0) {
+      await db.transaction('rw', [db.achievements, db.activity], async () => {
+        await db.achievements.bulkAdd(newlyEarned)
+        for (const record of newlyEarned) {
+          const item = unlockedItems.find((u) => u.key === record.achievementKey)
+          const title = item?.title ?? record.achievementKey
+          await logActivity(
+            workspaceId,
+            'achievement_earned',
+            'workspace',
+            record.id,
+            `Earned achievement “${title}”`,
+            { key: record.achievementKey, value: record.value },
+          )
+        }
+      })
+    }
+
+    return newlyEarned
+  },
+
   async reset(workspaceId: ID): Promise<void> {
     await db.achievements.where('workspaceId').equals(workspaceId).delete()
   },
