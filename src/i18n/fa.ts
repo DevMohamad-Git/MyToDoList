@@ -76,11 +76,17 @@ export const fa: Dictionary = {
 
   /* ------------------------------------------------------- score components -- */
   compTaskCompletion: 'تکمیل کارها',
+  compTaskCompletionHelp: 'درصد کل کارهایی که در طول روز برنامه‌ریزی و کامل شده‌اند.',
   compPriorityCompletion: 'تکمیل وزن‌دار با اولویت',
+  compPriorityCompletionHelp: 'ضریب وزنی بر اساس اولویت؛ کارهای مهم و فوری امتیاز بسیار بیشتری دارند.',
   compDeadlineDiscipline: 'نظم در مهلت‌ها',
+  compDeadlineDisciplineHelp: 'انجام کارها در سررسید مقرر بدون تاخیر و عبور از مهلت.',
   compTimeEfficiency: 'بازدهی زمان',
+  compTimeEfficiencyHelp: 'میزان نزدیکی زمان واقعی کارها به زمان تخمین‌زده‌شده اولیه.',
   compFocusTime: 'زمان تمرکز',
+  compFocusTimeHelp: 'دستیابی به هدف روزانه زمان تمرکز و جلسات پومودورو.',
   compConsistency: 'پیوستگی',
+  compConsistencyHelp: 'استمرار و فعالیت مداوم در طول روزهای اخیر (حفظ زنجیره).',
 
   /* ----------------------------------------------------------- task elements -- */
   taskEdit: 'ویرایش',
@@ -466,6 +472,20 @@ export const fa: Dictionary = {
   setDailyScore: 'امتیاز روزانه',
   setScoreDesc:
     'وزن‌ها به‌طور خودکار نرمال می‌شوند؛ جزئی بدون داده نادیده گرفته می‌شود، نه صفر در نظر گرفته',
+  setScorePresetsTitle: 'پروفایل‌های آماده امتیازدهی',
+  setPresetBalanced: 'متعادل (پیش‌فرض)',
+  setPresetBalancedDesc: 'توازن هوشمند بین همه فاکتورهای بازدهی',
+  setPresetDeadlines: 'نتیجه‌محور و مهلت‌ها',
+  setPresetDeadlinesDesc: 'تمرکز بالا بر کارهای فوری و تحویل سر وقت موعدها',
+  setPresetDeepWork: 'تمرکز عمیق و پومودورو',
+  setPresetDeepWorkDesc: 'تاکید بر ساعات ثبت‌شده فوکوس و جلسات متوالی',
+  setPresetSimple: 'ساده‌گرا و انجام کارها',
+  setPresetSimpleDesc: 'تیک زدن لیست کارها بدون پیچیدگی‌های زمانی',
+  setPresetCustom: 'شخصی‌سازی‌شده',
+  setActive: 'فعال',
+  setManualWeightsTitle: 'تنظیم دستی و پیشرفته وزن‌ها',
+  setShowDetails: 'مشاهده اسلایدرها',
+  setHideDetails: 'بستن اسلایدرها',
   setFocusTimer: 'تایمر تمرکز',
   setFocusTimerDesc: 'پیش‌فرض‌های پومودورو که صفحهٔ تمرکز استفاده می‌کند',
   setWork: 'کار',

@@ -4,10 +4,13 @@ import {
   Bell,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Coffee,
   Database,
   Download,
+  Flame,
   FolderOpen,
   HardDrive,
   History,
@@ -22,10 +25,13 @@ import {
   Paperclip,
   RotateCcw,
   Save,
+  Scale,
   Settings as SettingsIcon,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Sun,
+  Target,
   Timer,
   Trash2,
   Upload,
@@ -80,8 +86,120 @@ import { workspaceRepo, type DeepPartial } from '@/storage/workspaceRepo'
 import { achievementRepo } from '@/storage/reviewRepo'
 import { useAppearance } from '@/stores/appearance'
 import { useWorkspace, useWorkspaceStore } from '@/stores/workspace'
-import type { WeekDay, WorkspaceSettings } from '@/types'
+import type { ScoringWeights, WeekDay, WorkspaceSettings } from '@/types'
+import { cn } from '@/utils/cn'
 import { formatBytes } from '@/utils/date'
+
+interface ScoringPreset {
+  id: string
+  titleKey: TranslationKey
+  descKey: TranslationKey
+  icon: typeof Award
+  weights: ScoringWeights
+}
+
+const SCORING_PRESETS: ScoringPreset[] = [
+  {
+    id: 'balanced',
+    titleKey: 'setPresetBalanced',
+    descKey: 'setPresetBalancedDesc',
+    icon: Scale,
+    weights: {
+      taskCompletion: 30,
+      priorityCompletion: 25,
+      deadlineDiscipline: 15,
+      timeEfficiency: 10,
+      focusTime: 10,
+      consistency: 10,
+    },
+  },
+  {
+    id: 'deadlines',
+    titleKey: 'setPresetDeadlines',
+    descKey: 'setPresetDeadlinesDesc',
+    icon: Target,
+    weights: {
+      taskCompletion: 20,
+      priorityCompletion: 35,
+      deadlineDiscipline: 30,
+      timeEfficiency: 5,
+      focusTime: 5,
+      consistency: 5,
+    },
+  },
+  {
+    id: 'deepWork',
+    titleKey: 'setPresetDeepWork',
+    descKey: 'setPresetDeepWorkDesc',
+    icon: Flame,
+    weights: {
+      taskCompletion: 15,
+      priorityCompletion: 15,
+      deadlineDiscipline: 10,
+      timeEfficiency: 10,
+      focusTime: 40,
+      consistency: 10,
+    },
+  },
+  {
+    id: 'simple',
+    titleKey: 'setPresetSimple',
+    descKey: 'setPresetSimpleDesc',
+    icon: CheckCircle2,
+    weights: {
+      taskCompletion: 60,
+      priorityCompletion: 15,
+      deadlineDiscipline: 15,
+      timeEfficiency: 0,
+      focusTime: 0,
+      consistency: 10,
+    },
+  },
+]
+
+const SCORING_COMPONENTS = [
+  {
+    key: 'taskCompletion',
+    labelKey: 'compTaskCompletion',
+    descKey: 'compTaskCompletionHelp',
+  },
+  {
+    key: 'priorityCompletion',
+    labelKey: 'compPriorityCompletion',
+    descKey: 'compPriorityCompletionHelp',
+  },
+  {
+    key: 'deadlineDiscipline',
+    labelKey: 'compDeadlineDiscipline',
+    descKey: 'compDeadlineDisciplineHelp',
+  },
+  {
+    key: 'timeEfficiency',
+    labelKey: 'compTimeEfficiency',
+    descKey: 'compTimeEfficiencyHelp',
+  },
+  {
+    key: 'focusTime',
+    labelKey: 'compFocusTime',
+    descKey: 'compFocusTimeHelp',
+  },
+  {
+    key: 'consistency',
+    labelKey: 'compConsistency',
+    descKey: 'compConsistencyHelp',
+  },
+] as const
+
+function isPresetActive(current: ScoringWeights, target: ScoringWeights): boolean {
+  return (
+    current.taskCompletion === target.taskCompletion &&
+    current.priorityCompletion === target.priorityCompletion &&
+    current.deadlineDiscipline === target.deadlineDiscipline &&
+    current.timeEfficiency === target.timeEfficiency &&
+    current.focusTime === target.focusTime &&
+    current.consistency === target.consistency
+  )
+}
 
 /**
  * Settings: workspace identity, planning and scoring configuration, appearance,
@@ -129,6 +247,7 @@ export function SettingsPage() {
   const [activityRetentionDays, setActivityRetentionDays] = useState<number>(30)
   const [autoArchiveCompleted, setAutoArchiveCompleted] = useState<boolean>(true)
   const [pruningLogs, setPruningLogs] = useState(false)
+  const [showAdvancedScoring, setShowAdvancedScoring] = useState(false)
 
   const runDiagnostics = useCallback(async () => {
     setDiagLoading(true)
@@ -494,71 +613,176 @@ export function SettingsPage() {
         </Card>
 
         {/* --------------------------------------------------------- scoring -- */}
-        <Card>
-          <CardHeader
-            title={t('setDailyScore')}
-            description={t('setScoreDesc')}
-            icon={<Award className="size-4 text-accent" />}
-            actions={
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  void patchSettings(
-                    { scoring: { weights: { ...DEFAULT_SCORING_WEIGHTS } } },
-                    t('toastWsUpdated'),
-                  )
+        {(() => {
+          const activeScoringPreset = SCORING_PRESETS.find((p) =>
+            isPresetActive(workspace.settings.scoring.weights, p.weights),
+          )
+          return (
+            <Card>
+              <CardHeader
+                title={t('setDailyScore')}
+                description={t('setScoreDesc')}
+                icon={<Award className="size-4 text-accent" />}
+                actions={
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      void patchSettings(
+                        { scoring: { weights: { ...DEFAULT_SCORING_WEIGHTS } } },
+                        t('toastWsUpdated'),
+                      )
+                    }
+                  >
+                    <RotateCcw className="size-3.5" />
+                    {t('setResetWeights')}
+                  </Button>
                 }
-              >
-                <RotateCcw className="size-3.5" />
-                {t('setResetWeights')}
-              </Button>
-            }
-          />
-          <CardBody className="flex flex-col gap-4">
-            <div className="flex items-center justify-between rounded-lg border border-border/40 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              <span>
-                {t('setScoreTotal', {
-                  total: Object.values(workspace.settings.scoring.weights).reduce((a, b) => a + b, 0),
-                })}
-              </span>
-              <span className="font-semibold text-foreground tabular-nums">
-                {Object.values(workspace.settings.scoring.weights).reduce((a, b) => a + b, 0)}%
-              </span>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {(
-                [
-                  ['taskCompletion', 'compTaskCompletion'],
-                  ['priorityCompletion', 'compPriorityCompletion'],
-                  ['deadlineDiscipline', 'compDeadlineDiscipline'],
-                  ['timeEfficiency', 'compTimeEfficiency'],
-                  ['focusTime', 'compFocusTime'],
-                  ['consistency', 'compConsistency'],
-                ] as const
-              ).map(([key, labelKey]) => (
-                <Slider
-                  key={key}
-                  label={t(labelKey)}
-                  suffix="%"
-                  min={0}
-                  max={100}
-                  value={workspace.settings.scoring.weights[key]}
-                  onChange={(v) =>
-                    void patchSettings({
-                      scoring: {
-                        weights: {
-                          ...workspace.settings.scoring.weights,
-                          [key]: v,
-                        },
-                      },
-                    })
-                  }
-                />
-              ))}
-            </div>
-          </CardBody>
-        </Card>
+              />
+              <CardBody className="flex flex-col gap-4">
+                {/* Presets Grid */}
+                <div className="flex flex-col gap-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-foreground">
+                      {t('setScorePresetsTitle')}
+                    </span>
+                    {activeScoringPreset ? (
+                      <span className="text-[11px] text-muted-foreground">
+                        {t('setActive')}:{' '}
+                        <strong className="text-foreground">{t(activeScoringPreset.titleKey)}</strong>
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium text-accent">
+                        {t('setPresetCustom')}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    {SCORING_PRESETS.map((preset) => {
+                      const isSelected = activeScoringPreset?.id === preset.id
+                      const PresetIcon = preset.icon
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => {
+                            void patchSettings(
+                              { scoring: { weights: { ...preset.weights } } },
+                              t('toastWsUpdated'),
+                            )
+                          }}
+                          className={cn(
+                            'group flex flex-col justify-between rounded-xl border p-3.5 text-start transition-all cursor-pointer',
+                            'hover:border-accent/60 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                            isSelected
+                              ? 'border-accent bg-accent/10 shadow-xs ring-1 ring-accent/30'
+                              : 'border-border/60 bg-card/40',
+                          )}
+                        >
+                          <div className="flex w-full items-center justify-between mb-2">
+                            <div
+                              className={cn(
+                                'flex size-7 items-center justify-center rounded-lg transition-colors',
+                                isSelected
+                                  ? 'bg-accent text-accent-foreground'
+                                  : 'bg-muted text-muted-foreground group-hover:text-foreground',
+                              )}
+                            >
+                              <PresetIcon className="size-3.5" />
+                            </div>
+                            {isSelected ? (
+                              <span className="flex items-center gap-1 rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-semibold text-accent">
+                                <Check className="size-2.5" />
+                                {t('setActive')}
+                              </span>
+                            ) : null}
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold text-foreground">
+                              {t(preset.titleKey)}
+                            </div>
+                            <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                              {t(preset.descKey)}
+                            </div>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Collapsible Accordion Toggle */}
+                <div className="border-t border-border/40 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedScoring((prev) => !prev)}
+                    className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-muted/20 px-3.5 py-2.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/50 cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <SlidersHorizontal className="size-3.5 text-accent" />
+                      <span>{t('setManualWeightsTitle')}</span>
+                      {!activeScoringPreset && (
+                        <span className="rounded-md border border-accent/30 bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
+                          {t('setPresetCustom')}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-muted-foreground text-[11px]">
+                      <span>{showAdvancedScoring ? t('setHideDetails') : t('setShowDetails')}</span>
+                      {showAdvancedScoring ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                    </div>
+                  </button>
+                </div>
+
+                {/* Collapsible Sliders Content */}
+                {showAdvancedScoring && (
+                  <div className="flex flex-col gap-3 pt-1">
+                    <div className="flex items-center justify-between rounded-lg border border-border/40 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                      <span>
+                        {t('setScoreTotal', {
+                          total: Object.values(workspace.settings.scoring.weights).reduce((a, b) => a + b, 0),
+                        })}
+                      </span>
+                      <span className="font-semibold text-foreground tabular-nums">
+                        {Object.values(workspace.settings.scoring.weights).reduce((a, b) => a + b, 0)}%
+                      </span>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {SCORING_COMPONENTS.map(({ key, labelKey, descKey }) => (
+                        <div
+                          key={key}
+                          className="flex flex-col justify-between rounded-lg border border-border/50 bg-card/60 p-3 shadow-2xs"
+                        >
+                          <Slider
+                            label={t(labelKey)}
+                            suffix="%"
+                            min={0}
+                            max={100}
+                            value={workspace.settings.scoring.weights[key]}
+                            onChange={(v) =>
+                              void patchSettings({
+                                scoring: {
+                                  weights: {
+                                    ...workspace.settings.scoring.weights,
+                                    [key]: v,
+                                  },
+                                },
+                              })
+                            }
+                          />
+                          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                            {t(descKey)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+          )
+        })()}
 
         {/* -------------------------------------------------------- pomodoro -- */}
         <Card>

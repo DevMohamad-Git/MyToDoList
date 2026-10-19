@@ -76,11 +76,17 @@ export const en = {
 
   /* ------------------------------------------------------- score components -- */
   compTaskCompletion: 'Task completion',
+  compTaskCompletionHelp: 'Share of scheduled tasks completed during the day.',
   compPriorityCompletion: 'Priority-weighted completion',
+  compPriorityCompletionHelp: 'Priority-weighted; critical and urgent tasks yield higher score.',
   compDeadlineDiscipline: 'Deadline discipline',
+  compDeadlineDisciplineHelp: 'Completing work on or before deadlines without overrunning.',
   compTimeEfficiency: 'Time efficiency',
+  compTimeEfficiencyHelp: 'How closely actual logged time matched initial estimates.',
   compFocusTime: 'Focus time',
+  compFocusTimeHelp: 'Reaching the daily Pomodoro and focus timer target.',
   compConsistency: 'Consistency',
+  compConsistencyHelp: 'Consistency and active days across the recent tracking window.',
 
   /* ----------------------------------------------------------- task elements -- */
   taskEdit: 'Edit',
@@ -467,6 +473,20 @@ export const en = {
   setDailyScore: 'Daily score',
   setScoreDesc:
     'Weights are renormalised automatically; a component with no data is skipped, not zeroed',
+  setScorePresetsTitle: 'Scoring Presets',
+  setPresetBalanced: 'Balanced (Default)',
+  setPresetBalancedDesc: 'Smart balance across all productivity factors',
+  setPresetDeadlines: 'Results & Deadlines',
+  setPresetDeadlinesDesc: 'High focus on urgent tasks and meeting deadlines',
+  setPresetDeepWork: 'Deep Work & Focus',
+  setPresetDeepWorkDesc: 'Emphasis on logged focus hours and Pomodoro sessions',
+  setPresetSimple: 'Simple & Tasks',
+  setPresetSimpleDesc: 'Checking off tasks without time tracking complexity',
+  setPresetCustom: 'Customized',
+  setActive: 'Active',
+  setManualWeightsTitle: 'Manual & Advanced Weights',
+  setShowDetails: 'Show Sliders',
+  setHideDetails: 'Hide Sliders',
   setFocusTimer: 'Focus timer',
   setFocusTimerDesc: 'Pomodoro defaults used by the Focus page',
   setWork: 'Work',
