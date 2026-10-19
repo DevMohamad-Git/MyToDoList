@@ -16,6 +16,8 @@ build/
 .freebuff/
 .webcontainer/
 .gemini/
+.agent/
+
 
 # Test / coverage
 coverage/
