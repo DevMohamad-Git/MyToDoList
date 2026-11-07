@@ -11,17 +11,22 @@
     />
     <title>FlowOS</title>
     <script>
-      // Apply the persisted theme before first paint to avoid a flash of the wrong theme.
+      // Apply the persisted theme and font size before first paint to avoid a flash of the wrong styles.
       try {
         var raw = localStorage.getItem('momentum.appearance')
         var pref = raw ? JSON.parse(raw) : null
-        var mode = (pref && pref.theme) || 'system'
+        var state = (pref && pref.state) || pref || {}
+        var mode = state.theme || 'system'
         var dark =
           mode === 'dark' ||
           (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
         document.documentElement.classList.toggle('dark', dark)
-        if (pref && pref.accent) document.documentElement.dataset.accent = pref.accent
-        if (pref && pref.density) document.documentElement.dataset.density = pref.density
+        if (state.accent) document.documentElement.dataset.accent = state.accent
+        if (state.density) document.documentElement.dataset.density = state.density
+        if (typeof state.fontSize === 'number' && !isNaN(state.fontSize)) {
+          document.documentElement.style.fontSize = state.fontSize + 'px'
+          document.documentElement.style.setProperty('--font-scale', state.fontSize / 16)
+        }
       } catch (e) {
         /* storage unavailable — fall back to the default dark class on <html> */
       }

@@ -651,7 +651,7 @@ function NewMilestoneRow({ goalId }: { goalId: string }) {
 /* Create Goal Modal                                                          */
 /* -------------------------------------------------------------------------- */
 
-function CreateGoalModal({
+export function CreateGoalModal({
   open,
   onClose,
   projects,

@@ -727,7 +727,7 @@ export function HabitsPage() {
   )
 }
 
-function HabitModal({
+export function HabitModal({
   open,
   onClose,
   habit,

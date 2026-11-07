@@ -199,6 +199,14 @@ html[lang='fa'] button {
   .no-scrollbar {
     scrollbar-width: none;
   }
+
+  /* Ensure explicit pixel typography scales with dynamic root rem font size */
+  .text-\[10px\] {
+    font-size: 0.625rem !important;
+  }
+  .text-\[11px\] {
+    font-size: 0.6875rem !important;
+  }
 }
 
 /* Recharts paints an SVG focus outline on every bar/slice click; suppress it. */

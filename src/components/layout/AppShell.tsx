@@ -14,29 +14,37 @@ import {
   Trophy,
   X,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { QuickAddDialog } from '@/components/tasks/QuickAddDialog'
 import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher'
 import { Button } from '@/components/ui'
 import { useT, type TranslationKey } from '@/i18n'
 import { getPhaseMinutes, useFocusStore } from '@/stores/focusStore'
+import { useNavigationModules, type NavModuleKey } from '@/stores/navigationModules'
 import { useSettings, useWorkspaceId } from '@/stores/workspace'
 import { cn } from '@/utils/cn'
 import { formatTimer } from '@/utils/date'
 
-const NAV: { to: string; label: TranslationKey; icon: typeof LayoutDashboard; end?: boolean }[] = [
-  { to: '/', label: 'navDashboard', icon: LayoutDashboard, end: true },
-  { to: '/tasks', label: 'navTasks', icon: CheckSquare },
-  { to: '/planner', label: 'navPlanner', icon: CalendarDays },
-  { to: '/projects', label: 'navProjects', icon: FolderKanban },
-  { to: '/goals', label: 'navGoals', icon: Target },
-  { to: '/habits', label: 'navHabits', icon: Repeat },
-  { to: '/focus', label: 'navFocus', icon: Timer },
-  { to: '/analytics', label: 'navAnalytics', icon: BarChart3 },
-  { to: '/reviews', label: 'navReviews', icon: ClipboardCheck },
-  { to: '/achievements', label: 'navAchievements', icon: Trophy },
-  { to: '/settings', label: 'navSettings', icon: Settings },
+interface NavItem {
+  key: string
+  to: string
+  label: TranslationKey
+  icon: typeof LayoutDashboard
+  end?: boolean
+}
+
+const NAV_MODULES: (NavItem & { key: NavModuleKey })[] = [
+  { key: 'dashboard', to: '/', label: 'navDashboard', icon: LayoutDashboard, end: true },
+  { key: 'tasks', to: '/tasks', label: 'navTasks', icon: CheckSquare },
+  { key: 'planner', to: '/planner', label: 'navPlanner', icon: CalendarDays },
+  { key: 'projects', to: '/projects', label: 'navProjects', icon: FolderKanban },
+  { key: 'focus', to: '/focus', label: 'navFocus', icon: Timer },
+  { key: 'habits', to: '/habits', label: 'navHabits', icon: Repeat },
+  { key: 'goals', to: '/goals', label: 'navGoals', icon: Target },
+  { key: 'analytics', to: '/analytics', label: 'navAnalytics', icon: BarChart3 },
+  { key: 'reviews', to: '/reviews', label: 'navReviews', icon: ClipboardCheck },
+  { key: 'achievements', to: '/achievements', label: 'navAchievements', icon: Trophy },
 ]
 
 /**
@@ -52,6 +60,21 @@ export function AppShell() {
   const location = useLocation()
   const workspaceId = useWorkspaceId()
   const settings = useSettings()
+  const enabledModules = useNavigationModules((s) => s.enabledModules)
+
+  const visibleNav = useMemo<NavItem[]>(() => {
+    const active = NAV_MODULES.filter((item) => enabledModules[item.key])
+    return [
+      ...active,
+      {
+        key: 'settings',
+        to: '/settings',
+        label: 'navSettings',
+        icon: Settings,
+        end: false,
+      },
+    ]
+  }, [enabledModules])
 
   // Background focus timer status & shell-level context synchronization
   const focusRunning = useFocusStore((s) => s.running)
@@ -132,7 +155,7 @@ export function AppShell() {
         </div>
 
         <nav className="flex-1 overflow-y-auto px-2 py-2">
-          {NAV.map((item) => (
+          {visibleNav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

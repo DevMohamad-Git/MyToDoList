@@ -3,6 +3,8 @@ import {
   ArrowRight,
   CalendarDays,
   CheckCircle2,
+  CheckSquare,
+  ChevronDown,
   FileText,
   Flame,
   FolderKanban,
@@ -10,18 +12,21 @@ import {
   Pause,
   Play,
   Plus,
+  Repeat,
   Sparkles,
   Square,
+  Target,
   Timer,
   TrendingDown,
   TrendingUp,
 } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { subDays } from 'date-fns'
+import { addDays, subDays } from 'date-fns'
 import { QuickAddDialog } from '@/components/tasks/QuickAddDialog'
 import { TaskEditorModal } from '@/components/tasks/TaskEditorModal'
 import { TaskRow } from '@/components/tasks/TaskRow'
+import { groupTaskList } from '@/components/tasks/taskGrouping'
 import {
   Button,
   Card,
@@ -29,13 +34,18 @@ import {
   CardHeader,
   EmptyState,
   LoadingState,
+  Menu,
   PageHeader,
   ProgressBar,
   ScoreRing,
   StatTile,
   toast,
+  type MenuItem,
 } from '@/components/ui'
-import { intlLocale, ratingLabel, useT, type TranslationKey } from '@/i18n'
+import { CreateProjectModal } from '@/pages/ProjectsPage'
+import { CreateGoalModal } from '@/pages/GoalsPage'
+import { HabitModal } from '@/pages/HabitsPage'
+import { intlLocale, ratingLabel, useT } from '@/i18n'
 import { buildDashboardSummary, dayScoreSeries, scoreTrend } from '@/services/analytics'
 import { SEVERITY_TEXT, buildRecommendations } from '@/services/recommendations'
 import { habitRepo } from '@/storage/habitRepo'
@@ -45,7 +55,15 @@ import { getPhaseMinutes, useFocusStore } from '@/stores/focusStore'
 import { useWorkspace } from '@/stores/workspace'
 import type { ID, Task } from '@/types'
 import { cn } from '@/utils/cn'
-import { dayKeysBetween, formatDuration, formatTimer, todayKey } from '@/utils/date'
+import {
+  dayKeysBetween,
+  formatDuration,
+  formatTimer,
+  todayKey,
+  toDayKey,
+  toPersianDigits,
+} from '@/utils/date'
+import { formatJalali, toJalaliParts } from '@/utils/jalali'
 
 /**
  * Dashboard — the answer to "what should I do right now, and how am I doing?".
@@ -54,15 +72,6 @@ import { dayKeysBetween, formatDuration, formatTimer, todayKey } from '@/utils/d
  * never disagree with each other. All heavy analytics computations are memoized.
  */
 
-const COMPONENT_KEY: Record<string, TranslationKey> = {
-  taskCompletion: 'compTaskCompletion',
-  priorityCompletion: 'compPriorityCompletion',
-  deadlineDiscipline: 'compDeadlineDiscipline',
-  timeEfficiency: 'compTimeEfficiency',
-  focusTime: 'compFocusTime',
-  consistency: 'compConsistency',
-}
-
 export function DashboardPage() {
   const t = useT()
   const navigate = useNavigate()
@@ -70,6 +79,10 @@ export function DashboardPage() {
   const snapshot = useSnapshot()
   const [editingId, setEditingId] = useState<ID | null>(null)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
+  const [createProjectOpen, setCreateProjectOpen] = useState(false)
+  const [createGoalOpen, setCreateGoalOpen] = useState(false)
+  const [createHabitOpen, setCreateHabitOpen] = useState(false)
+  const [selectedUpcomingDay, setSelectedUpcomingDay] = useState<string | null>(null)
 
   // Focus store connection
   const focusRunning = useFocusStore((s) => s.running)
@@ -141,20 +154,51 @@ export function DashboardPage() {
     }
   }, [snapshot])
 
-  const handleRescheduleAllOverdue = useCallback(async () => {
-    if (!memoizedData?.summary.overdue.length) return
-    const overdueTasks = memoizedData.summary.overdue
-    const today = todayKey()
-    await Promise.all(
-      overdueTasks.map((task) =>
-        taskRepo.update(task.id, {
-          startDate: today,
-          dueDate: today,
-        }),
-      ),
-    )
-    toast.success(t('dashRescheduledSuccess', { n: overdueTasks.length }))
-  }, [memoizedData?.summary.overdue, t])
+  // Group today's scheduled tasks by project
+  const groupedScheduled = useMemo(() => {
+    if (!memoizedData?.summary.todayScheduled || !snapshot?.projects) return []
+    return groupTaskList(memoizedData.summary.todayScheduled, 'project', snapshot.projects, t)
+  }, [memoizedData?.summary.todayScheduled, snapshot?.projects, t])
+
+  // Enhanced next 7 days model for the calendar strip and grouping
+  const upcomingDays = useMemo(() => {
+    const list: {
+      key: string
+      date: Date
+      dayName: string
+      dayNumber: string
+      count: number
+      tasks: Task[]
+      isTomorrow: boolean
+    }[] = []
+
+    const upcomingTasks = memoizedData?.summary.upcoming ?? []
+    const baseNow = memoizedData?.now ?? new Date()
+
+    for (let i = 1; i <= 7; i++) {
+      const d = addDays(baseNow, i)
+      const k = toDayKey(d)
+      const dayTasks = upcomingTasks.filter((task) => task.dueDate && toDayKey(task.dueDate) === k)
+      const parts = toJalaliParts(d)
+      list.push({
+        key: k,
+        date: d,
+        dayName: formatJalali(d, 'EEEE'),
+        dayNumber: toPersianDigits(parts.day),
+        count: dayTasks.length,
+        tasks: dayTasks,
+        isTomorrow: i === 1,
+      })
+    }
+    return list
+  }, [memoizedData?.summary.upcoming, memoizedData?.now])
+
+  const displayedUpcomingGroups = useMemo(() => {
+    if (selectedUpcomingDay) {
+      return upcomingDays.filter((d) => d.key === selectedUpcomingDay)
+    }
+    return upcomingDays.filter((d) => d.tasks.length > 0)
+  }, [upcomingDays, selectedUpcomingDay])
 
   if (!snapshot) return <LoadingState label={t('dashBuilding')} />
 
@@ -191,8 +235,63 @@ export function DashboardPage() {
 
   const { now, summary, recommendations, projectById, trend, yesterdayDelta } = memoizedData
 
+  const quickActions: MenuItem[] = [
+    {
+      label: (
+        <span className="flex items-center gap-2">
+          <CheckSquare className="size-4 text-accent" />
+          <span>{t('dashNewTask')}</span>
+          <kbd className="ms-auto rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">N</kbd>
+        </span>
+      ),
+      onSelect: () => setQuickAddOpen(true),
+    },
+    {
+      label: (
+        <span className="flex items-center gap-2">
+          <FolderKanban className="size-4 text-accent" />
+          <span>{t('dashNewProject')}</span>
+        </span>
+      ),
+      onSelect: () => setCreateProjectOpen(true),
+    },
+    {
+      label: (
+        <span className="flex items-center gap-2">
+          <Target className="size-4 text-accent" />
+          <span>{t('dashNewGoal')}</span>
+        </span>
+      ),
+      onSelect: () => setCreateGoalOpen(true),
+    },
+    {
+      label: (
+        <span className="flex items-center gap-2">
+          <Repeat className="size-4 text-accent" />
+          <span>{t('dashNewHabit')}</span>
+        </span>
+      ),
+      onSelect: () => setCreateHabitOpen(true),
+    },
+    {
+      separated: true,
+      label: (
+        <span className="flex items-center gap-2">
+          <Timer className="size-4 text-accent" />
+          <span>{t('dashStartFocusSession')}</span>
+        </span>
+      ),
+      onSelect: () => {
+        if (!focusRunning) {
+          startFocus(workspace.id, workspace.settings)
+        }
+      },
+    },
+  ]
+
   return (
     <>
+      {/* ----------------------------------------------------------- 1. header -- */}
       <PageHeader
         title={t('dashTitle')}
         description={now.toLocaleDateString(intlLocale(), {
@@ -210,15 +309,22 @@ export function DashboardPage() {
                 </Button>
               </Link>
             )}
-            <Button variant="primary" size="sm" onClick={() => setQuickAddOpen(true)}>
-              <Plus className="size-3.5" />
-              {t('shellNewTask')}
-            </Button>
+            <Menu
+              align="right"
+              trigger={
+                <Button variant="primary" size="sm" className="gap-1.5 shadow-xs">
+                  <Plus className="size-3.5" />
+                  <span>{t('dashQuickActions')}</span>
+                  <ChevronDown className="size-3 opacity-70" />
+                </Button>
+              }
+              items={quickActions}
+            />
           </div>
         }
       />
 
-      {/* ------------------------------------------- active focus banner -- */}
+      {/* ------------------------------------------- 2. active focus banner -- */}
       {(focusRunning || focusElapsed > 0) && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/25 bg-accent/5 p-4 shadow-sm backdrop-blur transition-all">
           <div className="flex items-center gap-3">
@@ -289,102 +395,7 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* ------------------------------------------------------------ score -- */}
-      <div className="mb-4 grid min-w-0 gap-4 lg:grid-cols-[minmax(0,auto)_minmax(0,1fr)]">
-        <Card className="flex min-w-0 items-start gap-5 p-5 sm:items-center">
-          <ScoreRing
-            score={summary.today.score.score}
-            rating={summary.today.rating}
-            size={112}
-            label={t('dashToday')}
-          />
-          <div className="min-w-0">
-            <div className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              {t('dashTodaysScore')}
-            </div>
-            <div className="mt-1 text-lg font-semibold">{ratingLabel(summary.today.rating)}</div>
-
-            {yesterdayDelta != null ? (
-              <div
-                className={cn(
-                  'mt-1 flex items-center gap-1 text-xs',
-                  yesterdayDelta > 0
-                    ? 'text-emerald-400'
-                    : yesterdayDelta < 0
-                      ? 'text-rose-400'
-                      : 'text-muted-foreground',
-                )}
-              >
-                {yesterdayDelta > 0 ? (
-                  <TrendingUp className="size-3.5" />
-                ) : yesterdayDelta < 0 ? (
-                  <TrendingDown className="size-3.5" />
-                ) : null}
-                <span>
-                  {t('dashVsYesterday', {
-                    n: `${yesterdayDelta > 0 ? '+' : ''}${yesterdayDelta}`,
-                  })}
-                </span>
-              </div>
-            ) : (
-              <div className="mt-1 text-xs text-muted-foreground">{t('dashNoYesterday')}</div>
-            )}
-
-            <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Flame className="size-3.5 text-amber-400" />
-              {t('dashDayStreak', { n: summary.streak.current })}
-              <span className="opacity-60">{t('dashStreakBest', { n: summary.streak.longest })}</span>
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-5">
-          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
-            <h2 className="text-sm font-semibold">{t('dashScoreComponents')}</h2>
-            <Link
-              to="/analytics"
-              className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground hover:text-accent"
-            >
-              {t('dashTrend14')}{' '}
-              {trend.direction === 'up'
-                ? t('trendImproving')
-                : trend.direction === 'down'
-                  ? t('trendDeclining')
-                  : t('trendFlat')}
-              <ArrowRight className="size-3 rtl:rotate-180" />
-            </Link>
-          </div>
-
-          <div className="grid gap-2.5 sm:grid-cols-2">
-            {summary.today.score.components.map((component) => (
-              <div key={component.key} className="min-w-0" title={component.explanation}>
-                <div className="flex items-baseline justify-between gap-2 text-xs">
-                  <span className="min-w-0 truncate text-muted-foreground">
-                    {t(COMPONENT_KEY[component.key] ?? 'compTaskCompletion')}
-                  </span>
-                  <span
-                    className="inline-flex shrink-0 items-baseline gap-1.5 font-medium tabular-nums"
-                    dir="ltr"
-                  >
-                    <span>{component.value == null ? '—' : Math.round(component.value)}</span>
-                    <span className="text-[10px] font-normal text-muted-foreground/70">
-                      {component.value == null ? t('dashNa') : `${component.effectiveWeight}%`}
-                    </span>
-                  </span>
-                </div>
-                <ProgressBar
-                  className="mt-1"
-                  height="sm"
-                  value={component.value ?? 0}
-                  barClassName={component.value == null ? 'bg-muted-foreground/30' : undefined}
-                />
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
-
-      {/* ------------------------------------------------------------ tiles -- */}
+      {/* ------------------------------------------------------------ 3. tiles -- */}
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <StatTile
           label={t('dashOpenTasks')}
@@ -425,329 +436,547 @@ export function DashboardPage() {
         />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        {/* --------------------------------------------------------- today -- */}
-        <Card className="xl:col-span-2">
-          <CardHeader
-            title={t('dashTodaysPlan')}
-            description={
-              summary.todayScheduled.length === 0
-                ? t('dashNothingScheduled')
-                : t('dashScheduledN', {
-                    n: summary.todayScheduled.length,
-                    d: formatDuration(summary.today.scheduledMinutes),
-                  })
-            }
-            icon={<CalendarDays className="size-4" />}
-            actions={
-              <Link to="/planner">
-                <Button size="sm" variant="outline">
-                  {t('dashPlanner')}
-                </Button>
-              </Link>
-            }
-          />
-          {summary.todayScheduled.length === 0 ? (
-            <CardBody>
-              <p className="text-sm text-muted-foreground">{t('dashNothingOnCalendar')}</p>
-            </CardBody>
-          ) : (
-            <div>
-              {summary.todayScheduled.map((task) => (
-                <TaskRow
-                  key={task.id}
-                  task={task}
-                  project={task.projectId ? projectById.get(task.projectId) : null}
-                  onToggle={toggle}
-                  onOpen={openEditor}
-                  onEdit={openEditor}
-                />
-              ))}
-            </div>
-          )}
-        </Card>
-
-        {/* ----------------------------------------------- recommendations -- */}
-        <Card>
-          <CardHeader
-            title={t('dashRecommendations')}
-            description={t('dashFromYourData')}
-            icon={<Sparkles className="size-4" />}
-          />
-          {recommendations.length === 0 ? (
-            <CardBody>
-              <p className="text-sm text-muted-foreground">{t('dashAllClear')}</p>
-            </CardBody>
-          ) : (
-            <div className="divide-y divide-border">
-              {recommendations.map((rec) => (
-                <div key={rec.id} className="min-w-0 overflow-hidden p-3.5">
-                  <h3 className={cn('break-words text-sm font-medium', SEVERITY_TEXT[rec.severity])}>
-                    {rec.title}
-                  </h3>
-                  <p className="mt-0.5 text-xs leading-relaxed break-words text-muted-foreground">
-                    {rec.detail}
-                  </p>
-                  <p className="mt-1 text-[11px] leading-relaxed break-words text-muted-foreground/70">
-                    {rec.evidence}
-                  </p>
-                  {rec.action ? (
-                    <Link
-                      to={rec.action.to}
-                      className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
-                    >
-                      {rec.action.label}
-                      <ArrowRight className="size-3 rtl:rotate-180" />
-                    </Link>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-
-        {/* ------------------------------------------------------- overdue -- */}
-        <Card>
-          <CardHeader
-            title={t('dashOverdue')}
-            description={
-              summary.overdue.length === 0
-                ? t('dashNothingLate')
-                : t('dashPastDeadlineN', { n: summary.overdue.length })
-            }
-            icon={<AlertTriangle className="size-4" />}
-            actions={
-              summary.overdue.length > 0 ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleRescheduleAllOverdue}
-                  className="h-7 text-xs"
-                >
-                  <CalendarDays className="size-3" />
-                  {t('dashRescheduleAllToday')}
-                </Button>
-              ) : undefined
-            }
-          />
-          {summary.overdue.length === 0 ? (
-            <CardBody>
-              <p className="text-sm text-muted-foreground">{t('dashDeadlinesAhead')}</p>
-            </CardBody>
-          ) : (
-            <div className="max-h-80 overflow-y-auto">
-              {summary.overdue.slice(0, 8).map((task) => (
-                <TaskRow
-                  key={task.id}
-                  task={task}
-                  project={task.projectId ? projectById.get(task.projectId) : null}
-                  onToggle={toggle}
-                  onOpen={openEditor}
-                  onEdit={openEditor}
-                />
-              ))}
-            </div>
-          )}
-        </Card>
-
-        {/* ------------------------------------------------------ upcoming -- */}
-        <Card>
-          <CardHeader
-            title={t('dashNext7')}
-            description={
-              summary.upcoming.length === 1
-                ? t('dashDeadline1', { n: summary.upcoming.length })
-                : t('dashDeadlineN', { n: summary.upcoming.length })
-            }
-            icon={<CalendarDays className="size-4" />}
-          />
-          {summary.upcoming.length === 0 ? (
-            <CardBody>
-              <p className="text-sm text-muted-foreground">{t('dashNoDeadlinesWeek')}</p>
-            </CardBody>
-          ) : (
-            <div className="max-h-80 overflow-y-auto">
-              {summary.upcoming.slice(0, 8).map((task) => (
-                <TaskRow
-                  key={task.id}
-                  task={task}
-                  project={task.projectId ? projectById.get(task.projectId) : null}
-                  onToggle={toggle}
-                  onOpen={openEditor}
-                  onEdit={openEditor}
-                />
-              ))}
-            </div>
-          )}
-        </Card>
-
-        {/* -------------------------------------------------------- habits -- */}
-        <Card>
-          <CardHeader
-            title={t('dashHabitsToday')}
-            description={t('dashHabitsDone', {
-              done: summary.habitsToday.filter((h) => h.count >= h.target).length,
-              total: summary.habitsToday.length,
-            })}
-            icon={<Flame className="size-4" />}
-            actions={
+      {/* ---------------- 4. quick overview (habits, goals, projects) -- */}
+      <Card className="mb-4 overflow-hidden">
+        <CardHeader
+          title={t('dashQuickOverview')}
+          icon={<Sparkles className="size-4" />}
+        />
+        <div className="grid grid-cols-1 divide-y divide-border lg:grid-cols-3 lg:divide-y-0 lg:divide-x lg:rtl:divide-x-reverse">
+          {/* Column 1: Habits Today */}
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center justify-between border-b border-border/70 bg-muted/20 px-4 py-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <Flame className="size-4 text-amber-500 shrink-0" />
+                <span className="text-xs font-semibold text-foreground truncate">{t('dashHabitsToday')}</span>
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground tabular-nums">
+                  {t('dashHabitsDone', {
+                    done: summary.habitsToday.filter((h) => h.count >= h.target).length,
+                    total: summary.habitsToday.length,
+                  })}
+                </span>
+              </div>
               <Link to="/habits">
-                <Button size="sm" variant="outline">
+                <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground">
                   {t('cAll')}
                 </Button>
               </Link>
-            }
-          />
-          {summary.habitsToday.length === 0 ? (
-            <CardBody>
-              <p className="text-sm text-muted-foreground">{t('dashNoHabits')}</p>
-            </CardBody>
-          ) : (
-            <div className="divide-y divide-border">
-              {summary.habitsToday.map(({ habit, count, target, streak }) => (
-                <button
-                  key={habit.id}
-                  type="button"
-                  onClick={() => void habitRepo.cycle(workspace.id, habit.id, todayKey(), target)}
-                  className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-start transition-colors hover:bg-muted/40 active:scale-[0.99]"
-                >
-                  <span
-                    className={cn(
-                      'flex size-5 shrink-0 items-center justify-center rounded-full border-2 text-[10px] font-bold transition-transform',
-                      count >= target
-                        ? 'border-transparent text-white'
-                        : 'border-muted-foreground/40',
-                    )}
-                    style={count >= target ? { backgroundColor: habit.color } : undefined}
-                  >
-                    {count >= target ? '✓' : ''}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-sm">{habit.title}</span>
-                  {target > 1 ? (
-                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                      {count}/{target}
-                    </span>
-                  ) : null}
-                  {streak > 0 ? (
-                    <span className="shrink-0 text-xs text-muted-foreground">🔥 {streak}</span>
-                  ) : null}
-                </button>
-              ))}
             </div>
-          )}
-        </Card>
+            {summary.habitsToday.length === 0 ? (
+              <div className="p-4 text-center">
+                <p className="text-xs text-muted-foreground">{t('dashNoHabits')}</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border/60 max-h-72 overflow-y-auto">
+                {summary.habitsToday.map(({ habit, count, target, streak }) => (
+                  <button
+                    key={habit.id}
+                    type="button"
+                    onClick={() => void habitRepo.cycle(workspace.id, habit.id, todayKey(), target)}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-start transition-colors hover:bg-muted/40 active:scale-[0.99]"
+                  >
+                    <span
+                      className={cn(
+                        'flex size-5 shrink-0 items-center justify-center rounded-full border-2 text-[10px] font-bold transition-transform',
+                        count >= target
+                          ? 'border-transparent text-white'
+                          : 'border-muted-foreground/40',
+                      )}
+                      style={count >= target ? { backgroundColor: habit.color } : undefined}
+                    >
+                      {count >= target ? '✓' : ''}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium">{habit.title}</span>
+                    {target > 1 ? (
+                      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                        {count}/{target}
+                      </span>
+                    ) : null}
+                    {streak > 0 ? (
+                      <span className="shrink-0 text-[11px] text-muted-foreground">🔥 {streak}</span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-        {/* ------------------------------------------------------ projects -- */}
-        <Card className="xl:col-span-2">
-          <CardHeader
-            title={t('dashActiveProjects')}
-            description={t('dashInFlight', { n: summary.activeProjects.length })}
-            actions={
+          {/* Column 2: Goals */}
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center justify-between border-b border-border/70 bg-muted/20 px-4 py-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <Target className="size-4 text-indigo-500 shrink-0" />
+                <span className="text-xs font-semibold text-foreground truncate">{t('dashGoals')}</span>
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground tabular-nums">
+                  {t('dashActiveN', { n: summary.activeGoals.length })}
+                </span>
+              </div>
+              <Link to="/goals">
+                <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground">
+                  {t('cAll')}
+                </Button>
+              </Link>
+            </div>
+            {summary.activeGoals.length === 0 ? (
+              <div className="p-4 text-center">
+                <p className="text-xs text-muted-foreground">{t('dashNoActiveGoals')}</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border/60 max-h-72 overflow-y-auto">
+                {summary.activeGoals.slice(0, 6).map(({ goal, stats }) => (
+                  <div key={goal.id} className="px-3.5 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="size-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: goal.color }}
+                      />
+                      <span className="min-w-0 flex-1 truncate text-xs font-medium">{goal.title}</span>
+                      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground" dir="ltr">
+                        {Math.round(stats.progress)}%
+                      </span>
+                    </div>
+                    <ProgressBar
+                      className="mt-1.5"
+                      value={stats.progress}
+                      height="sm"
+                      color={goal.color}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Column 3: Active Projects */}
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center justify-between border-b border-border/70 bg-muted/20 px-4 py-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <FolderKanban className="size-4 text-emerald-500 shrink-0" />
+                <span className="text-xs font-semibold text-foreground truncate">{t('dashActiveProjects')}</span>
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground tabular-nums">
+                  {t('dashInFlight', { n: summary.activeProjects.length })}
+                </span>
+              </div>
               <Link to="/projects">
-                <Button size="sm" variant="outline">
+                <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground">
                   {t('dashAllProjects')}
                 </Button>
               </Link>
-            }
-          />
-          {summary.activeProjects.length === 0 ? (
-            <CardBody>
-              <p className="text-sm text-muted-foreground">{t('dashNoActiveProjects')}</p>
-            </CardBody>
-          ) : (
-            <div className="divide-y divide-border">
-              {summary.activeProjects.slice(0, 6).map(({ project, stats }) => (
-                <Link
-                  key={project.id}
-                  to={`/projects/${project.id}`}
-                  className="flex items-center gap-3 px-3.5 py-2.5 transition-colors hover:bg-muted/40"
-                >
-                  <span
-                    className="size-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: project.color }}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{project.name}</span>
-                    <span className="mt-1 block">
-                      <ProgressBar value={stats.progress} height="sm" color={project.color} />
-                    </span>
-                  </span>
-                  <span className="w-10 shrink-0 text-end text-xs tabular-nums text-muted-foreground" dir="ltr">
-                    {Math.round(stats.progress)}%
-                  </span>
-                  <span className="hidden w-20 shrink-0 text-end text-xs text-muted-foreground sm:block">
-                    {t('dashOpenN', { n: stats.openTasks })}
-                  </span>
-                </Link>
-              ))}
             </div>
-          )}
-        </Card>
-
-        {/* --------------------------------------------------------- goals -- */}
-        <Card>
-          <CardHeader
-            title={t('dashGoals')}
-            description={t('dashActiveN', { n: summary.activeGoals.length })}
-            actions={
-              <Link to="/goals">
-                <Button size="sm" variant="outline">
-                  {t('cAll')}
-                </Button>
-              </Link>
-            }
-          />
-          {summary.activeGoals.length === 0 ? (
-            <CardBody>
-              <p className="text-sm text-muted-foreground">{t('dashNoActiveGoals')}</p>
-            </CardBody>
-          ) : (
-            <div className="divide-y divide-border">
-              {summary.activeGoals.slice(0, 5).map(({ goal, stats }) => (
-                <div key={goal.id} className="px-3.5 py-2.5">
-                  <div className="flex items-center gap-2">
+            {summary.activeProjects.length === 0 ? (
+              <div className="p-4 text-center">
+                <p className="text-xs text-muted-foreground">{t('dashNoActiveProjects')}</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border/60 max-h-72 overflow-y-auto">
+                {summary.activeProjects.slice(0, 6).map(({ project, stats }) => (
+                  <Link
+                    key={project.id}
+                    to={`/projects/${project.id}`}
+                    className="flex items-center gap-3 px-3.5 py-2.5 transition-colors hover:bg-muted/40"
+                  >
                     <span
                       className="size-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: goal.color }}
+                      style={{ backgroundColor: project.color }}
                     />
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium">{goal.title}</span>
-                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-medium">{project.name}</span>
+                      <span className="mt-1 block">
+                        <ProgressBar value={stats.progress} height="sm" color={project.color} />
+                      </span>
+                    </span>
+                    <span className="w-9 shrink-0 text-end text-[11px] tabular-nums text-muted-foreground" dir="ltr">
                       {Math.round(stats.progress)}%
                     </span>
+                    <span className="hidden w-16 shrink-0 text-end text-[11px] text-muted-foreground sm:block">
+                      {t('dashOpenN', { n: stats.openTasks })}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      {/* ---------------- 5. today's plan [PLACED RIGHT UNDER QUICK OVERVIEW] -- */}
+      <Card className="mb-4">
+        <CardHeader
+          title={t('dashTodaysPlan')}
+          description={
+            summary.todayScheduled.length === 0
+              ? t('dashNothingScheduled')
+              : t('dashScheduledN', {
+                  n: summary.todayScheduled.length,
+                  d: formatDuration(summary.today.scheduledMinutes),
+                })
+          }
+          icon={<CalendarDays className="size-4" />}
+          actions={
+            <Link to="/planner">
+              <Button size="sm" variant="outline">
+                {t('dashPlanner')}
+              </Button>
+            </Link>
+          }
+        />
+        {summary.todayScheduled.length === 0 ? (
+          <CardBody>
+            <p className="text-sm text-muted-foreground">{t('dashNothingOnCalendar')}</p>
+          </CardBody>
+        ) : (
+          <div className="divide-y divide-border/60 max-h-80 sm:max-h-96 overflow-y-auto">
+            {groupedScheduled.map((group) => (
+              <div key={group.key}>
+                <div className="sticky top-0 z-10 flex items-center justify-between bg-muted/40 backdrop-blur-xs px-3.5 py-2 text-xs font-semibold text-muted-foreground border-b border-border/50">
+                  <div className="flex items-center gap-2">
+                    {group.color ? (
+                      <span
+                        className="size-2.5 rounded-full"
+                        style={{ backgroundColor: group.color }}
+                      />
+                    ) : (
+                      <FolderKanban className="size-3.5 text-muted-foreground/70" />
+                    )}
+                    <span>{group.label}</span>
                   </div>
-                  <ProgressBar
-                    className="mt-1.5"
-                    value={stats.progress}
-                    height="sm"
-                    color={goal.color}
-                  />
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground tabular-nums">
+                    {toPersianDigits(group.count)}
+                  </span>
+                </div>
+                <div className="divide-y divide-border/40">
+                  {group.tasks.map((task) => (
+                    <TaskRow
+                      key={task.id}
+                      task={task}
+                      project={task.projectId ? projectById.get(task.projectId) : null}
+                      onToggle={toggle}
+                      onOpen={openEditor}
+                      onEdit={openEditor}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* ----------------- 6. score & recommendations [COMPACT SCORE & EXTRA-BOLD RECOMMENDATIONS] -- */}
+      <div className="mb-4 grid min-w-0 gap-4 lg:grid-cols-12">
+        {/* Today's Score - Compact & Small Box */}
+        <Card className="flex flex-col justify-between p-3.5 sm:p-4 lg:col-span-4 xl:col-span-4 border-border/80">
+          <div>
+            <div className="flex items-center gap-3">
+              <ScoreRing
+                score={summary.today.score.score}
+                rating={summary.today.rating}
+                size={76}
+                strokeWidth={7}
+                label={t('dashToday')}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                  {t('dashTodaysScore')}
+                </div>
+                <div className="mt-0.5 text-base font-bold text-foreground leading-snug">
+                  {ratingLabel(summary.today.rating)}
+                </div>
+
+                {yesterdayDelta != null ? (
+                  <div
+                    className={cn(
+                      'mt-1 flex items-center gap-1 text-[11px] font-medium',
+                      yesterdayDelta > 0
+                        ? 'text-emerald-500'
+                        : yesterdayDelta < 0
+                          ? 'text-rose-500'
+                          : 'text-muted-foreground',
+                    )}
+                  >
+                    {yesterdayDelta > 0 ? (
+                      <TrendingUp className="size-3" />
+                    ) : yesterdayDelta < 0 ? (
+                      <TrendingDown className="size-3" />
+                    ) : null}
+                    <span>
+                      {t('dashVsYesterday', {
+                        n: `${yesterdayDelta > 0 ? '+' : ''}${toPersianDigits(yesterdayDelta)}`,
+                      })}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="mt-1 text-[11px] text-muted-foreground">{t('dashNoYesterday')}</div>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/30 px-2.5 py-1.5 rounded-lg border border-border/40">
+              <Flame className="size-3.5 text-amber-500 shrink-0" />
+              <span>{t('dashDayStreak', { n: toPersianDigits(summary.streak.current) })}</span>
+              <span className="opacity-60">{t('dashStreakBest', { n: toPersianDigits(summary.streak.longest) })}</span>
+            </div>
+          </div>
+
+          <div className="mt-3 pt-2.5 border-t border-border/60 flex items-center justify-between text-xs">
+            <span className="text-[11px] text-muted-foreground">
+              {t('dashTrend14')}:{' '}
+              <span className="font-semibold text-foreground">
+                {trend.direction === 'up'
+                  ? t('trendImproving')
+                  : trend.direction === 'down'
+                    ? t('trendDeclining')
+                    : t('trendFlat')}
+              </span>
+            </span>
+            <Link
+              to="/analytics"
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-accent hover:underline"
+            >
+              <span>{t('dashTrend14')}</span>
+              <ArrowRight className="size-3 rtl:rotate-180" />
+            </Link>
+          </div>
+        </Card>
+
+        {/* Recommendations - Extra-Bold, Prominent & High Visibility */}
+        <Card className="flex flex-col lg:col-span-8 xl:col-span-8 border-2 border-accent/40 bg-gradient-to-br from-accent/[0.06] via-accent/[0.02] to-transparent shadow-sm">
+          <CardHeader
+            title={
+              <div className="flex items-center gap-2.5">
+                <span className="flex size-7 items-center justify-center rounded-lg bg-accent text-accent-foreground shadow-xs">
+                  <Sparkles className="size-4 animate-pulse" />
+                </span>
+                <span className="font-extrabold text-foreground text-base sm:text-lg tracking-tight">
+                  {t('dashRecommendations')}
+                </span>
+                {recommendations.length > 0 && (
+                  <span className="rounded-full bg-accent text-accent-foreground px-2.5 py-0.5 text-xs font-bold tabular-nums shadow-xs">
+                    {toPersianDigits(recommendations.length)}
+                  </span>
+                )}
+              </div>
+            }
+            description={t('dashFromYourData')}
+          />
+          {recommendations.length === 0 ? (
+            <CardBody className="flex-1 flex items-center justify-center py-6">
+              <p className="text-sm font-medium text-muted-foreground">{t('dashAllClear')}</p>
+            </CardBody>
+          ) : (
+            <div className="p-3 sm:p-4 space-y-2.5 max-h-80 overflow-y-auto">
+              {recommendations.map((rec) => (
+                <div
+                  key={rec.id}
+                  className={cn(
+                    'rounded-xl border p-3 sm:p-3.5 transition-all shadow-xs hover:shadow-md border-s-4',
+                    rec.severity === 'critical'
+                      ? 'border-rose-500/40 bg-rose-500/10 border-s-rose-500'
+                      : rec.severity === 'warning'
+                        ? 'border-amber-500/40 bg-amber-500/10 border-s-amber-500'
+                        : rec.severity === 'positive'
+                          ? 'border-emerald-500/40 bg-emerald-500/10 border-s-emerald-500'
+                          : 'border-sky-500/40 bg-sky-500/10 border-s-sky-500',
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <div className="mt-0.5 shrink-0">
+                        {rec.severity === 'critical' ? (
+                          <AlertTriangle className="size-4.5 text-rose-500" />
+                        ) : rec.severity === 'warning' ? (
+                          <AlertTriangle className="size-4.5 text-amber-500" />
+                        ) : rec.severity === 'positive' ? (
+                          <CheckCircle2 className="size-4.5 text-emerald-500" />
+                        ) : (
+                          <Sparkles className="size-4.5 text-sky-500" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className={cn('text-sm sm:text-base font-extrabold leading-snug', SEVERITY_TEXT[rec.severity])}>
+                          {rec.title}
+                        </h3>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground font-medium">
+                          {rec.detail}
+                        </p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground/80 font-mono">
+                          {rec.evidence}
+                        </p>
+                      </div>
+                    </div>
+                    {rec.action && (
+                      <Link
+                        to={rec.action.to}
+                        className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-bold text-accent-foreground shadow-sm hover:bg-accent/90 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                      >
+                        <span>{rec.action.label}</span>
+                        <ArrowRight className="size-3.5 rtl:rotate-180" />
+                      </Link>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </Card>
-
-        {/* --------------------------------------------- daily scratchpad -- */}
-        <Card className="xl:col-span-3">
-          <CardHeader
-            title={t('dashQuickNotes')}
-            description={now.toLocaleDateString(intlLocale(), {
-              month: 'short',
-              day: 'numeric',
-            })}
-            icon={<FileText className="size-4" />}
-          />
-          <CardBody className="p-3.5">
-            <textarea
-              value={scratchpad}
-              onChange={(e) => handleScratchpadChange(e.target.value)}
-              placeholder={t('dashQuickNotesPlaceholder')}
-              rows={3}
-              className="w-full resize-none rounded-lg border border-border bg-muted/20 p-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/60 transition-colors focus:border-accent focus:bg-background focus:outline-none focus:ring-1 focus:ring-accent"
-            />
-          </CardBody>
-        </Card>
       </div>
+
+      {/* ---------------- 7. next 7 days [VISUALLY ENHANCED & OVERDUE REMOVED] -- */}
+      <Card className="mb-4 overflow-hidden">
+        <CardHeader
+          title={t('dashNext7')}
+          description={
+            summary.upcoming.length === 0
+              ? t('dashNoDeadlinesWeek')
+              : summary.upcoming.length === 1
+                ? t('dashDeadline1', { n: toPersianDigits(1) })
+                : t('dashDeadlineN', { n: toPersianDigits(summary.upcoming.length) })
+          }
+          icon={<CalendarDays className="size-4" />}
+          actions={
+            selectedUpcomingDay && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setSelectedUpcomingDay(null)}
+              >
+                {t('cAll')}
+              </Button>
+            )
+          }
+        />
+
+        {/* 7-Day interactive calendar strip */}
+        <div className="border-b border-border/70 bg-muted/15 p-2 sm:p-3">
+          <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
+            {upcomingDays.map((day) => {
+              const isSelected = selectedUpcomingDay === day.key
+              const hasTasks = day.count > 0
+              return (
+                <button
+                  key={day.key}
+                  type="button"
+                  onClick={() => setSelectedUpcomingDay(isSelected ? null : day.key)}
+                  className={cn(
+                    'group relative flex flex-col items-center justify-center rounded-xl p-2 sm:py-2.5 transition-all text-center',
+                    isSelected
+                      ? 'bg-accent text-accent-foreground shadow-sm ring-2 ring-accent/30'
+                      : hasTasks
+                        ? 'bg-card border border-border/80 hover:border-accent/50 hover:bg-muted/40 shadow-2xs'
+                        : 'bg-card/40 border border-transparent hover:bg-muted/20 opacity-70 hover:opacity-100',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'text-[10px] sm:text-[11px] font-medium leading-none',
+                      isSelected ? 'text-accent-foreground' : 'text-muted-foreground',
+                    )}
+                  >
+                    {day.isTomorrow ? t('dTomorrow') : day.dayName}
+                  </span>
+                  <span
+                    className={cn(
+                      'mt-1 text-sm sm:text-base font-bold tabular-nums leading-none',
+                      isSelected
+                        ? 'text-accent-foreground'
+                        : hasTasks
+                          ? 'text-foreground'
+                          : 'text-muted-foreground',
+                    )}
+                  >
+                    {day.dayNumber}
+                  </span>
+
+                  {hasTasks ? (
+                    <span
+                      className={cn(
+                        'mt-1 inline-flex items-center justify-center rounded-full px-1.5 py-0.2 text-[9px] font-semibold tabular-nums',
+                        isSelected
+                          ? 'bg-white/20 text-accent-foreground'
+                          : 'bg-accent/15 text-accent',
+                      )}
+                    >
+                      {day.dayNumber && toPersianDigits(day.count)}
+                    </span>
+                  ) : (
+                    <span className="mt-1 h-3.5" />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Task list grouped by day */}
+        {summary.upcoming.length === 0 ? (
+          <CardBody className="py-8 text-center">
+            <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-accent/10 text-accent mb-3">
+              <CalendarDays className="size-6" />
+            </div>
+            <p className="text-sm font-medium text-foreground">{t('dashNoDeadlinesWeek')}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{t('dashDeadlinesAhead')}</p>
+          </CardBody>
+        ) : displayedUpcomingGroups.length === 0 ? (
+          <CardBody className="py-8 text-center">
+            <p className="text-xs text-muted-foreground">{t('dashNothingScheduled')}</p>
+          </CardBody>
+        ) : (
+          <div className="divide-y divide-border/60 max-h-96 overflow-y-auto">
+            {displayedUpcomingGroups.map((group) => (
+              <div key={group.key}>
+                <div className="sticky top-0 z-10 flex items-center justify-between bg-muted/40 backdrop-blur-xs px-3.5 py-2 text-xs font-semibold text-muted-foreground border-b border-border/50">
+                  <div className="flex items-center gap-2">
+                    <CalendarDays className="size-3.5 text-accent" />
+                    <span className="text-foreground">{formatJalali(group.date, 'EEEE d MMMM')}</span>
+                    {group.isTomorrow && (
+                      <span className="rounded-full bg-amber-500/15 text-amber-500 px-2 py-0.5 text-[10px] font-medium">
+                        {t('dTomorrow')}
+                      </span>
+                    )}
+                  </div>
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground tabular-nums">
+                    {toPersianDigits(group.count)} {t('dashDeadlineN', { n: '' }).trim()}
+                  </span>
+                </div>
+                <div className="divide-y divide-border/40">
+                  {group.tasks.map((task) => (
+                    <TaskRow
+                      key={task.id}
+                      task={task}
+                      project={task.projectId ? projectById.get(task.projectId) : null}
+                      onToggle={toggle}
+                      onOpen={openEditor}
+                      onEdit={openEditor}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* --------------------------------------------- 8. daily scratchpad -- */}
+      <Card className="mb-4">
+        <CardHeader
+          title={t('dashQuickNotes')}
+          description={now.toLocaleDateString(intlLocale(), {
+            month: 'short',
+            day: 'numeric',
+          })}
+          icon={<FileText className="size-4" />}
+        />
+        <CardBody className="p-3.5">
+          <textarea
+            value={scratchpad}
+            onChange={(e) => handleScratchpadChange(e.target.value)}
+            placeholder={t('dashQuickNotesPlaceholder')}
+            rows={3}
+            className="w-full resize-none rounded-lg border border-border bg-muted/20 p-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/60 transition-colors focus:border-accent focus:bg-background focus:outline-none focus:ring-1 focus:ring-accent"
+          />
+        </CardBody>
+      </Card>
 
       <TaskEditorModal
         taskId={editingId}
@@ -756,6 +985,23 @@ export function DashboardPage() {
       />
 
       <QuickAddDialog open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
+
+      <CreateProjectModal
+        open={createProjectOpen}
+        onClose={() => setCreateProjectOpen(false)}
+      />
+
+      <CreateGoalModal
+        open={createGoalOpen}
+        onClose={() => setCreateGoalOpen(false)}
+        projects={snapshot?.projects.map((p) => ({ id: p.id, name: p.name })) ?? []}
+      />
+
+      <HabitModal
+        open={createHabitOpen}
+        onClose={() => setCreateHabitOpen(false)}
+        habit={null}
+      />
     </>
   )
 }

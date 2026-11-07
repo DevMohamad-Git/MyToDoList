@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   Award,
+  BarChart3,
+  CalendarDays,
+  CheckSquare,
+  ClipboardCheck,
+  FolderKanban,
+  LayoutDashboard,
+  Repeat,
+  Trophy,
   Bell,
   Check,
   CheckCircle2,
@@ -85,6 +93,7 @@ import { downloadBlob, fsCapabilities, linkFolder, pickTextFile } from '@/storag
 import { workspaceRepo, type DeepPartial } from '@/storage/workspaceRepo'
 import { achievementRepo } from '@/storage/reviewRepo'
 import { useAppearance } from '@/stores/appearance'
+import { useNavigationModules, type NavModuleKey } from '@/stores/navigationModules'
 import { useWorkspace, useWorkspaceStore } from '@/stores/workspace'
 import type { ScoringWeights, WeekDay, WorkspaceSettings } from '@/types'
 import { cn } from '@/utils/cn'
@@ -205,6 +214,76 @@ function isPresetActive(current: ScoringWeights, target: ScoringWeights): boolea
  * Settings: workspace identity, planning and scoring configuration, appearance,
  * database health & vacuum, performance & retention policy, and data lifecycle.
  */
+interface ModuleConfigItem {
+  key: NavModuleKey
+  titleKey: TranslationKey
+  descKey: TranslationKey
+  icon: typeof LayoutDashboard
+}
+
+const MODULE_CONFIG_ITEMS: ModuleConfigItem[] = [
+  {
+    key: 'dashboard',
+    titleKey: 'setModuleDashboard',
+    descKey: 'setModuleDashboardDesc',
+    icon: LayoutDashboard,
+  },
+  {
+    key: 'tasks',
+    titleKey: 'setModuleTasks',
+    descKey: 'setModuleTasksDesc',
+    icon: CheckSquare,
+  },
+  {
+    key: 'planner',
+    titleKey: 'setModulePlanner',
+    descKey: 'setModulePlannerDesc',
+    icon: CalendarDays,
+  },
+  {
+    key: 'projects',
+    titleKey: 'setModuleProjects',
+    descKey: 'setModuleProjectsDesc',
+    icon: FolderKanban,
+  },
+  {
+    key: 'focus',
+    titleKey: 'setModuleFocus',
+    descKey: 'setModuleFocusDesc',
+    icon: Timer,
+  },
+  {
+    key: 'habits',
+    titleKey: 'setModuleHabits',
+    descKey: 'setModuleHabitsDesc',
+    icon: Repeat,
+  },
+  {
+    key: 'goals',
+    titleKey: 'setModuleGoals',
+    descKey: 'setModuleGoalsDesc',
+    icon: Target,
+  },
+  {
+    key: 'analytics',
+    titleKey: 'setModuleAnalytics',
+    descKey: 'setModuleAnalyticsDesc',
+    icon: BarChart3,
+  },
+  {
+    key: 'reviews',
+    titleKey: 'setModuleReviews',
+    descKey: 'setModuleReviewsDesc',
+    icon: ClipboardCheck,
+  },
+  {
+    key: 'achievements',
+    titleKey: 'setModuleAchievements',
+    descKey: 'setModuleAchievementsDesc',
+    icon: Trophy,
+  },
+]
+
 export function SettingsPage() {
   const t = useT()
   const language = useI18n((s) => s.language)
@@ -224,6 +303,9 @@ export function SettingsPage() {
   }, [workspace.id, workspace.name, workspace.description])
 
   const appearance = useAppearance()
+  const enabledModules = useNavigationModules((s) => s.enabledModules)
+  const setModuleEnabled = useNavigationModules((s) => s.setModuleEnabled)
+  const applyModulesPreset = useNavigationModules((s) => s.applyPreset)
   const [exportOptions, setExportOptions] = useState<Required<ExportOptions>>({
     includeAttachments: false,
     includeActivity: true,
@@ -516,6 +598,77 @@ export function SettingsPage() {
                 <Save className="size-3.5" />
                 {t('setSaveWorkspace')}
               </Button>
+            </div>
+          </CardBody>
+        </Card>
+
+        {/* ------------------------------------------- navigation & modules -- */}
+        <Card>
+          <CardHeader
+            title={t('setNavModules')}
+            description={t('setNavModulesDesc')}
+            icon={<SlidersHorizontal className="size-4" />}
+            actions={
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    applyModulesPreset('focused')
+                    toast.success(t('setModulePresetFocused'))
+                  }}
+                >
+                  <Sparkles className="size-3.5 text-accent" />
+                  {t('setModulePresetFocused')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    applyModulesPreset('full')
+                    toast.success(t('setModulePresetFull'))
+                  }}
+                >
+                  {t('setModulePresetFull')}
+                </Button>
+              </div>
+            }
+          />
+          <CardBody className="flex flex-col gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {MODULE_CONFIG_ITEMS.map((item) => {
+                const isEnabled = enabledModules[item.key]
+                return (
+                  <div
+                    key={item.key}
+                    className={cn(
+                      'rounded-xl border p-3.5 transition-all',
+                      isEnabled
+                        ? 'border-accent/40 bg-accent/5 shadow-xs'
+                        : 'border-border bg-card/40 opacity-70',
+                    )}
+                  >
+                    <Toggle
+                      checked={isEnabled}
+                      onChange={(checked) => setModuleEnabled(item.key, checked)}
+                      label={t(item.titleKey)}
+                      description={t(item.descKey)}
+                      icon={
+                        <span
+                          className={cn(
+                            'flex size-7 items-center justify-center rounded-md border',
+                            isEnabled
+                              ? 'border-accent/30 bg-accent/15 text-accent'
+                              : 'border-border bg-muted/40 text-muted-foreground',
+                          )}
+                        >
+                          <item.icon className="size-3.5" />
+                        </span>
+                      }
+                    />
+                  </div>
+                )
+              })}
             </div>
           </CardBody>
         </Card>
