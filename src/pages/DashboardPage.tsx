@@ -428,48 +428,64 @@ export function DashboardPage() {
           tone="accent"
           icon={<Timer className="size-4" />}
         />
-        <StatTile
-          label={t('dashTodaysScore')}
-          value={
-            <div className="flex items-baseline gap-2">
-              <span>{summary.today.score.noData ? '—' : Math.round(summary.today.score.score)}</span>
-              <span className="text-xs font-semibold text-muted-foreground">
-                {ratingLabel(summary.today.rating)}
-              </span>
-            </div>
-          }
-          hint={
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="truncate">
-                {yesterdayDelta != null
-                  ? t('dashVsYesterday', {
-                      n: `${yesterdayDelta > 0 ? '+' : ''}${toPersianDigits(yesterdayDelta)}`,
-                    })
-                  : t('dashDayStreak', { n: toPersianDigits(summary.streak.current) })}
-              </span>
-              <Link
-                to="/analytics"
-                className="ms-1 inline-flex shrink-0 items-center gap-1 text-accent hover:underline"
-              >
-                {trend.direction === 'up' ? (
-                  <TrendingUp className="size-2.5 text-emerald-500" />
-                ) : trend.direction === 'down' ? (
-                  <TrendingDown className="size-2.5 text-rose-500" />
-                ) : null}
-                <span>{t('dashTrend14')}</span>
-                <ArrowRight className="size-2.5 rtl:rotate-180" />
-              </Link>
-            </div>
-          }
-          icon={
+        {/* Today's Score Tile - Proportional & Prominent */}
+        <Card className="min-w-0 overflow-hidden p-3.5 sm:p-4 flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-muted-foreground truncate">
+              {t('dashTodaysScore')}
+            </span>
+            <Link
+              to="/analytics"
+              className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-accent hover:underline"
+            >
+              {trend.direction === 'up' ? (
+                <TrendingUp className="size-2.5 text-emerald-500" />
+              ) : trend.direction === 'down' ? (
+                <TrendingDown className="size-2.5 text-rose-500" />
+              ) : null}
+              <span>{t('dashTrend14')}</span>
+              <ArrowRight className="size-2.5 rtl:rotate-180" />
+            </Link>
+          </div>
+
+          <div className="my-1 flex items-center gap-3">
             <ScoreRing
               score={summary.today.score.score}
               rating={summary.today.rating}
-              size={32}
-              strokeWidth={3.5}
+              size={58}
+              strokeWidth={5.5}
             />
-          }
-        />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm sm:text-base font-bold text-foreground leading-snug truncate">
+                {ratingLabel(summary.today.rating)}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {yesterdayDelta != null ? (
+                  <span
+                    className={cn(
+                      'font-medium',
+                      yesterdayDelta > 0
+                        ? 'text-emerald-500'
+                        : yesterdayDelta < 0
+                          ? 'text-rose-500'
+                          : '',
+                    )}
+                  >
+                    {yesterdayDelta > 0 ? '+' : ''}
+                    {toPersianDigits(yesterdayDelta)}{' '}
+                    <span className="text-[11px] font-normal text-muted-foreground">
+                      نسبت به دیروز
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-[11px]">
+                    {t('dashDayStreak', { n: toPersianDigits(summary.streak.current) })}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </Card>
       </div>
 
       {/* ---------------- 4. quick overview (habits, goals, projects) -- */}
