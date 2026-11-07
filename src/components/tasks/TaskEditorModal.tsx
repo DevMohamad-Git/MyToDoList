@@ -10,6 +10,7 @@ import {
   Input,
   JalaliDatePicker,
   JalaliDateTimePicker,
+  Drawer,
   Modal,
   OptionSelect,
   Select,
@@ -65,10 +66,12 @@ export function TaskEditorModal({
   taskId,
   open,
   onClose,
+  mode = 'modal',
 }: {
   taskId: ID | null
   open: boolean
   onClose: () => void
+  mode?: 'modal' | 'drawer'
 }) {
   const t = useT()
   const language = useI18n((s) => s.language)
@@ -145,11 +148,13 @@ export function TaskEditorModal({
 
   if (!open) return null
 
+  const Container = mode === 'drawer' ? Drawer : Modal
+
   if (!draft) {
     return (
-      <Modal open={open} onClose={onClose} title={t('teTask')}>
+      <Container open={open} onClose={onClose} title={t('teTask')}>
         <p className="py-6 text-center text-sm text-muted-foreground">{t('teLoading')}</p>
-      </Modal>
+      </Container>
     )
   }
 
@@ -298,7 +303,7 @@ export function TaskEditorModal({
   const tagsValue = draft.tags.join(', ')
 
   return (
-    <Modal
+    <Container
       open={open}
       onClose={onClose}
       title={draft.title || t('teTask')}
@@ -873,6 +878,6 @@ export function TaskEditorModal({
           </div>
         </div>
       ) : null}
-    </Modal>
+    </Container>
   )
 }

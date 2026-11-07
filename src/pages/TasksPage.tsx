@@ -1,17 +1,22 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
   ChevronDown,
+  Inbox,
   Layers,
   ListFilter,
   Plus,
+  RotateCcw,
   Search,
+  ShieldAlert,
   SlidersHorizontal,
+  X,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { QuickAddDialog } from '@/components/tasks/QuickAddDialog'
 import { TaskBatchBar } from '@/components/tasks/TaskBatchBar'
 import { TaskEditorModal } from '@/components/tasks/TaskEditorModal'
+import { TaskInlineAdd } from '@/components/tasks/TaskInlineAdd'
 import { TaskNestedSubtasks } from '@/components/tasks/TaskNestedSubtasks'
 import { TaskRow } from '@/components/tasks/TaskRow'
 import { VirtualTaskList } from '@/components/tasks/VirtualTaskList'
@@ -28,9 +33,7 @@ import {
   EmptyState,
   LoadingState,
   OptionSelect,
-  PageHeader,
   SegmentedControl,
-  StatTile,
   toast,
 } from '@/components/ui'
 import { TASKS_PAGE_CONFIG } from '@/config/tasksPageConfig'
@@ -52,13 +55,14 @@ import { cn } from '@/utils/cn'
  * Each phase can be isolated or rolled back in `src/config/tasksPageConfig.ts`.
  */
 
-type StatusView = 'open' | 'today' | 'overdue' | 'inbox' | 'completed' | 'all'
+type StatusView = 'open' | 'today' | 'overdue' | 'inbox' | 'blocked' | 'completed' | 'all'
 
 const STATUS_VIEW_KEY: Record<StatusView, TranslationKey> = {
   open: 'filterOpen',
   today: 'filterToday',
   overdue: 'filterOverdue',
   inbox: 'filterInbox',
+  blocked: 'filterBlocked',
   completed: 'filterDone',
   all: 'filterAll',
 }
@@ -101,7 +105,7 @@ export function TasksPage() {
     const requested = searchParams.get('filter') as StatusView | null
     if (
       requested &&
-      ['open', 'today', 'overdue', 'inbox', 'completed', 'all'].includes(requested)
+      ['open', 'today', 'overdue', 'inbox', 'blocked', 'completed', 'all'].includes(requested)
     ) {
       setStatusView(requested)
       setSearchParams({}, { replace: true })
@@ -189,6 +193,9 @@ export function TasksPage() {
         break
       case 'inbox':
         base.status = ['inbox']
+        break
+      case 'blocked':
+        base.status = ['blocked']
         break
       case 'completed':
         base.status = ['completed']
@@ -347,72 +354,207 @@ export function TasksPage() {
   const openCount =
     sortedTasks?.filter((t) => t.status !== 'completed' && t.status !== 'cancelled').length ?? 0
 
+  const hasActiveFilters = Boolean(
+    search.trim() ||
+    statusView !== 'open' ||
+    projectId ||
+    priority ||
+    tag ||
+    groupBy !== 'none' ||
+    sortBy !== 'order'
+  )
+
+  function handleResetFilters() {
+    setSearch('')
+    setStatusView('open')
+    setProjectId('')
+    setPriority('')
+    setTag('')
+    setGroupBy('none')
+    setSortBy('order')
+  }
+
   return (
     <>
-      <PageHeader
-        title={t('tasksTitle')}
-        description={t('tasksDesc')}
-        actions={
-          <div className="flex items-center gap-2">
-            {TASKS_PAGE_CONFIG.phase3PowerFeatures && sortedTasks.length > 0 ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleSelectAll}
-                className="text-xs"
-              >
-                {selectedIds.size === sortedTasks.length
-                  ? t('bulkDeselectAll')
-                  : t('bulkSelectAll')}
-              </Button>
-            ) : null}
-            <Button variant="primary" onClick={() => setQuickAddOpen(true)}>
-              <Plus className="size-4" />
-              {t('shellNewTask')}
-            </Button>
-          </div>
-        }
-      />
+      {/* Top Header with Centered Wide Search Bar */}
+      <div className="mb-5 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="shrink-0 text-start w-full md:w-auto">
+          <h1 className="text-xl font-bold tracking-tight text-foreground">{t('tasksTitle')}</h1>
+          <p className="mt-0.5 text-xs text-muted-foreground">{t('tasksDesc')}</p>
+        </div>
 
-      {/* Metric Tiles: Using Phase 1 Global Situation Stats */}
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <StatTile
-          label={t('tasksShowing')}
-          value={<span dir="ltr">{sortedTasks?.length ?? '…'}</span>}
-          hint={t('tasksOpenInView', { n: openCount })}
-          icon={<ListFilter className="size-4" />}
-        />
-        <StatTile
-          label={t('tasksInbox')}
-          value={
-            TASKS_PAGE_CONFIG.phase1QuickWins
-              ? (globalCounts?.inbox ?? '…')
-              : (sortedTasks?.filter((task) => task.status === 'inbox').length ?? '…')
-          }
-          hint={t('tasksUnprocessed')}
-        />
-        <StatTile
-          label={t('tasksBlocked')}
-          value={
-            TASKS_PAGE_CONFIG.phase1QuickWins
-              ? (globalCounts?.blocked ?? '…')
-              : (sortedTasks?.filter((task) => task.status === 'blocked').length ?? '…')
-          }
-          tone={
-            (TASKS_PAGE_CONFIG.phase1QuickWins
-              ? (globalCounts?.blocked ?? 0)
-              : (sortedTasks?.filter((task) => task.status === 'blocked').length ?? 0)) > 0
-              ? 'warning'
-              : 'default'
-          }
-          hint={t('tasksWaitingOn')}
-        />
+        {/* Centered Large Search Bar */}
+        <div className="w-full flex-1 md:max-w-3xl md:mx-4">
+          <div className="relative w-full">
+            <Search className="pointer-events-none absolute top-1/2 start-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('tasksSearchPlaceholder')}
+              className="h-10 w-full rounded-xl border border-border/80 bg-card pe-10 ps-10 text-sm shadow-xs placeholder:text-muted-foreground/70 transition-all focus:border-accent focus:bg-background focus:outline-none focus:ring-2 focus:ring-accent/20"
+            />
+            {search ? (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute top-1/2 end-2.5 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
+                title="پاک کردن"
+              >
+                <X className="size-4" />
+              </button>
+            ) : (
+              <kbd className="pointer-events-none absolute top-1/2 end-3 -translate-y-1/2 hidden sm:inline-flex items-center rounded-md border border-border/80 bg-muted/60 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground shadow-2xs">
+                /
+              </kbd>
+            )}
+          </div>
+        </div>
+
+        {/* Balanced status indicator on the end */}
+        <div className="hidden md:flex items-center justify-end shrink-0 min-w-24 text-xs text-muted-foreground">
+          {sortedTasks && sortedTasks.length > 0 ? (
+            <span className="rounded-full bg-muted/60 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+              {openCount} {t('filterOpen')}
+            </span>
+          ) : null}
+        </div>
       </div>
 
-      {/* Main Filter & Control Toolbar */}
-      <Card className="mb-4 p-3">
-        <div className="flex flex-col gap-2.5">
-          <div className="flex flex-wrap items-center gap-2">
+      {/* 3 Compact Horizontal KPI Cards */}
+      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+        {/* Card 1: Showing (Open) */}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setStatusView((prev) => (prev === 'open' ? 'all' : 'open'))}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              setStatusView((prev) => (prev === 'open' ? 'all' : 'open'))
+            }
+          }}
+          className={cn(
+            'flex items-center justify-between rounded-card border bg-card p-3.5 transition-all cursor-pointer select-none',
+            'hover:border-blue-500/40 hover:bg-blue-500/[0.02]',
+            statusView === 'open'
+              ? 'border-blue-500/60 bg-blue-500/[0.06] ring-2 ring-blue-500/25 shadow-xs'
+              : 'border-border',
+          )}
+        >
+          <div className="min-w-0">
+            <span className="text-xs font-semibold text-foreground">
+              {t('tasksShowing')}
+            </span>
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+              {t('tasksOpenInView', { n: openCount })}
+            </p>
+          </div>
+          <div className="flex items-center gap-2.5 shrink-0">
+            <span className="text-xl font-bold tabular-nums text-foreground" dir="ltr">
+              {sortedTasks?.length ?? '…'}
+            </span>
+            <div className="flex size-8 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500 dark:bg-blue-400/15 dark:text-blue-400">
+              <ListFilter className="size-4" />
+            </div>
+          </div>
+        </div>
+
+        {/* Card 2: Inbox */}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setStatusView((prev) => (prev === 'inbox' ? 'open' : 'inbox'))}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              setStatusView((prev) => (prev === 'inbox' ? 'open' : 'inbox'))
+            }
+          }}
+          className={cn(
+            'flex items-center justify-between rounded-card border bg-card p-3.5 transition-all cursor-pointer select-none',
+            'hover:border-amber-500/40 hover:bg-amber-500/[0.02]',
+            statusView === 'inbox'
+              ? 'border-amber-500/60 bg-amber-500/[0.06] ring-2 ring-amber-500/25 shadow-xs'
+              : 'border-border',
+          )}
+        >
+          <div className="min-w-0">
+            <span className="text-xs font-semibold text-foreground">
+              {t('tasksInbox')}
+            </span>
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+              {t('tasksUnprocessed')}
+            </p>
+          </div>
+          <div className="flex items-center gap-2.5 shrink-0">
+            <span className="text-xl font-bold tabular-nums text-foreground" dir="ltr">
+              {TASKS_PAGE_CONFIG.phase1QuickWins
+                ? (globalCounts?.inbox ?? 0)
+                : (sortedTasks?.filter((task) => task.status === 'inbox').length ?? 0)}
+            </span>
+            <div className="flex size-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-500 dark:bg-amber-400/15 dark:text-amber-400">
+              <Inbox className="size-4" />
+            </div>
+          </div>
+        </div>
+
+        {/* Card 3: Blocked */}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setStatusView((prev) => (prev === 'blocked' ? 'open' : 'blocked'))}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              setStatusView((prev) => (prev === 'blocked' ? 'open' : 'blocked'))
+            }
+          }}
+          className={cn(
+            'flex items-center justify-between rounded-card border bg-card p-3.5 transition-all cursor-pointer select-none',
+            'hover:border-rose-500/40 hover:bg-rose-500/[0.02]',
+            statusView === 'blocked'
+              ? 'border-rose-500/60 bg-rose-500/[0.06] ring-2 ring-rose-500/25 shadow-xs'
+              : 'border-border',
+          )}
+        >
+          <div className="min-w-0">
+            <span className="text-xs font-semibold text-foreground">
+              {t('tasksBlocked')}
+            </span>
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+              {t('tasksWaitingOn')}
+            </p>
+          </div>
+          <div className="flex items-center gap-2.5 shrink-0">
+            <span
+              className={cn(
+                'text-xl font-bold tabular-nums',
+                (TASKS_PAGE_CONFIG.phase1QuickWins
+                  ? (globalCounts?.blocked ?? 0)
+                  : (sortedTasks?.filter((task) => task.status === 'blocked').length ?? 0)) > 0
+                  ? 'text-rose-500 dark:text-rose-400'
+                  : 'text-foreground',
+              )}
+              dir="ltr"
+            >
+              {TASKS_PAGE_CONFIG.phase1QuickWins
+                ? (globalCounts?.blocked ?? 0)
+                : (sortedTasks?.filter((task) => task.status === 'blocked').length ?? 0)}
+            </span>
+            <div className="flex size-8 items-center justify-center rounded-lg bg-rose-500/10 text-rose-500 dark:bg-rose-400/15 dark:text-rose-400">
+              <ShieldAlert className="size-4" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Single-Row Filter & Control Toolbar */}
+      <Card className="mb-4 p-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2.5">
+          {/* Start: Status views Segmented Control */}
+          <div className="no-scrollbar overflow-x-auto">
             <SegmentedControl
               value={statusView}
               options={(Object.keys(STATUS_VIEW_KEY) as StatusView[]).map((view) => ({
@@ -421,48 +563,37 @@ export function TasksPage() {
               }))}
               onChange={setStatusView}
             />
+          </div>
 
-            <div className="relative min-w-44 flex-1">
-              <Search className="pointer-events-none absolute top-1/2 start-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <input
-                ref={searchInputRef}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={t('tasksSearchPlaceholder')}
-                className="h-8 w-full rounded-lg border border-input bg-background pe-2 ps-8 text-sm placeholder:text-muted-foreground/70 focus:border-accent focus:outline-none"
-              />
-            </div>
-
+          {/* End: Filters, Grouping, Sorting, Reset */}
+          <div className="flex flex-wrap items-center gap-2">
             <OptionSelect
               value={projectId}
               placeholder={t('tasksAllProjects')}
               onChange={setProjectId}
               options={projects.map((p) => ({ value: p.id, label: p.name }))}
-              className="w-40"
+              className="h-8 w-36 text-xs"
             />
             <OptionSelect
               value={priority}
               placeholder={t('tasksAnyPriority')}
               onChange={setPriority}
               options={PRIORITIES.map((p) => ({ value: p, label: priorityLabel(p) }))}
-              className="w-32"
+              className="h-8 w-28 text-xs"
             />
             <OptionSelect
               value={tag}
               placeholder={t('tasksAnyTag')}
               onChange={setTag}
               options={tags.map((tag) => ({ value: tag, label: `#${tag}` }))}
-              className="w-32"
+              className="h-8 w-28 text-xs"
             />
-          </div>
 
-          {/* Phase 3: Group By & Sort Controls */}
-          {TASKS_PAGE_CONFIG.phase3PowerFeatures ? (
-            <div className="flex flex-wrap items-center justify-between border-t border-border/50 pt-2 text-xs text-muted-foreground">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5">
+            {TASKS_PAGE_CONFIG.phase3PowerFeatures ? (
+              <>
+                <div className="hidden sm:block h-4 w-px bg-border/60 mx-0.5" />
+                <div className="flex items-center gap-1">
                   <Layers className="size-3.5 text-muted-foreground" />
-                  <span className="font-medium text-foreground">{t('groupByNone')}:</span>
                   <OptionSelect<GroupByMode>
                     value={groupBy}
                     onChange={setGroupBy}
@@ -472,13 +603,11 @@ export function TasksPage() {
                       { value: 'priority', label: t('groupByPriority') },
                       { value: 'dueDate', label: t('groupByDueDate') },
                     ]}
-                    className="h-7 w-40 text-xs"
+                    className="h-8 w-32 text-xs"
                   />
                 </div>
-
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1">
                   <SlidersHorizontal className="size-3.5 text-muted-foreground" />
-                  <span className="font-medium text-foreground">{t('sortByOrder')}:</span>
                   <OptionSelect<SortByMode>
                     value={sortBy}
                     onChange={setSortBy}
@@ -489,23 +618,60 @@ export function TasksPage() {
                       { value: 'title', label: t('sortByTitle') },
                       { value: 'createdAt', label: t('sortByCreated') },
                     ]}
-                    className="h-7 w-36 text-xs"
+                    className="h-8 w-30 text-xs"
                   />
                 </div>
-              </div>
+              </>
+            ) : null}
 
-              {selectedIds.size > 0 ? (
-                <span className="font-semibold text-accent">
-                  {t('bulkSelected', { n: selectedIds.size })}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
+            {hasActiveFilters ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleResetFilters}
+                className="h-8 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                title={t('tasksResetFilters')}
+              >
+                <RotateCcw className="size-3" />
+                <span className="hidden sm:inline">{t('tasksResetFilters')}</span>
+              </Button>
+            ) : null}
+
+            {TASKS_PAGE_CONFIG.phase3PowerFeatures && sortedTasks.length > 0 ? (
+              <Button
+                variant={selectedIds.size > 0 ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={handleSelectAll}
+                className={cn(
+                  'h-8 text-xs px-2 cursor-pointer',
+                  selectedIds.size > 0 ? 'font-semibold text-accent' : 'text-muted-foreground',
+                )}
+                title={
+                  selectedIds.size === sortedTasks.length
+                    ? t('bulkDeselectAll')
+                    : t('bulkSelectAll')
+                }
+              >
+                {selectedIds.size === sortedTasks.length
+                  ? t('bulkDeselectAll')
+                  : selectedIds.size > 0
+                    ? t('bulkSelected', { n: selectedIds.size })
+                    : t('bulkSelectAll')}
+              </Button>
+            ) : null}
+          </div>
         </div>
       </Card>
 
       {/* Task List / Virtualized Container */}
-      <Card>
+      <Card className="overflow-hidden">
+        {/* Inline Quick Add permanently at top of list */}
+        <TaskInlineAdd
+          workspaceId={workspaceId}
+          defaultProjectId={projectId || null}
+          currentStatusView={statusView}
+        />
+
         {!rawTasks ? (
           <LoadingState label={t('tasksLoading')} />
         ) : sortedTasks.length === 0 ? (
@@ -579,6 +745,7 @@ export function TasksPage() {
                                   ? selectedIds.has(task.id)
                                   : undefined
                               }
+                              hasAnySelection={selectedIds.size > 0}
                               onSelectChange={
                                 TASKS_PAGE_CONFIG.phase3PowerFeatures
                                   ? handleSelectTask
@@ -663,6 +830,7 @@ export function TasksPage() {
 
       <QuickAddDialog open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
       <TaskEditorModal
+        mode="drawer"
         taskId={editingId}
         open={editingId != null}
         onClose={() => setEditingId(null)}

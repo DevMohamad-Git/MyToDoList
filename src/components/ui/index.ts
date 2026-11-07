@@ -34,6 +34,9 @@ export {
 export { ConfirmDialog, Modal } from './Modal'
 export type { ModalSize } from './Modal'
 
+export { Drawer } from './Drawer'
+export type { DrawerProps } from './Drawer'
+
 export { Menu, Tabs } from './Menu'
 export type { MenuItem, TabDef } from './Menu'
 
