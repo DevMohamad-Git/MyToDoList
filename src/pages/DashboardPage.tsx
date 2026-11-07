@@ -47,7 +47,7 @@ import { CreateGoalModal } from '@/pages/GoalsPage'
 import { HabitModal } from '@/pages/HabitsPage'
 import { intlLocale, ratingLabel, useT } from '@/i18n'
 import { buildDashboardSummary, dayScoreSeries, scoreTrend } from '@/services/analytics'
-import { SEVERITY_TEXT, buildRecommendations } from '@/services/recommendations'
+import { SEVERITY_CLASS, SEVERITY_TEXT, buildRecommendations } from '@/services/recommendations'
 import { habitRepo } from '@/storage/habitRepo'
 import { taskRepo } from '@/storage/taskRepo'
 import { useSnapshot } from '@/hooks/useSnapshot'
@@ -429,10 +429,46 @@ export function DashboardPage() {
           icon={<Timer className="size-4" />}
         />
         <StatTile
-          label={t('dashFocusWeek')}
-          value={formatDuration(summary.weekFocusMinutes)}
-          hint={t('dashWeekScore', { r: ratingLabel(summary.weekRating) })}
-          icon={<CalendarDays className="size-4" />}
+          label={t('dashTodaysScore')}
+          value={
+            <div className="flex items-baseline gap-2">
+              <span>{summary.today.score.noData ? '—' : Math.round(summary.today.score.score)}</span>
+              <span className="text-xs font-semibold text-muted-foreground">
+                {ratingLabel(summary.today.rating)}
+              </span>
+            </div>
+          }
+          hint={
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="truncate">
+                {yesterdayDelta != null
+                  ? t('dashVsYesterday', {
+                      n: `${yesterdayDelta > 0 ? '+' : ''}${toPersianDigits(yesterdayDelta)}`,
+                    })
+                  : t('dashDayStreak', { n: toPersianDigits(summary.streak.current) })}
+              </span>
+              <Link
+                to="/analytics"
+                className="ms-1 inline-flex shrink-0 items-center gap-1 text-accent hover:underline"
+              >
+                {trend.direction === 'up' ? (
+                  <TrendingUp className="size-2.5 text-emerald-500" />
+                ) : trend.direction === 'down' ? (
+                  <TrendingDown className="size-2.5 text-rose-500" />
+                ) : null}
+                <span>{t('dashTrend14')}</span>
+                <ArrowRight className="size-2.5 rtl:rotate-180" />
+              </Link>
+            </div>
+          }
+          icon={
+            <ScoreRing
+              score={summary.today.score.score}
+              rating={summary.today.rating}
+              size={32}
+              strokeWidth={3.5}
+            />
+          }
         />
       </div>
 
@@ -662,164 +698,72 @@ export function DashboardPage() {
         )}
       </Card>
 
-      {/* ----------------- 6. score & recommendations [COMPACT SCORE & EXTRA-BOLD RECOMMENDATIONS] -- */}
-      <div className="mb-4 grid min-w-0 gap-4 lg:grid-cols-12">
-        {/* Today's Score - Compact & Small Box */}
-        <Card className="flex flex-col justify-between p-3.5 sm:p-4 lg:col-span-4 xl:col-span-4 border-border/80">
-          <div>
-            <div className="flex items-center gap-3">
-              <ScoreRing
-                score={summary.today.score.score}
-                rating={summary.today.rating}
-                size={76}
-                strokeWidth={7}
-                label={t('dashToday')}
-              />
-              <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-                  {t('dashTodaysScore')}
-                </div>
-                <div className="mt-0.5 text-base font-bold text-foreground leading-snug">
-                  {ratingLabel(summary.today.rating)}
-                </div>
-
-                {yesterdayDelta != null ? (
-                  <div
-                    className={cn(
-                      'mt-1 flex items-center gap-1 text-[11px] font-medium',
-                      yesterdayDelta > 0
-                        ? 'text-emerald-500'
-                        : yesterdayDelta < 0
-                          ? 'text-rose-500'
-                          : 'text-muted-foreground',
+      {/* ---------------- 6. recommendations [FULL WIDTH & CLEAN TYPOGRAPHY] -- */}
+      <Card className="mb-4">
+        <CardHeader
+          title={
+            <div className="flex items-center gap-2">
+              <span className="font-semibold">{t('dashRecommendations')}</span>
+              {recommendations.length > 0 && (
+                <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium text-accent tabular-nums">
+                  {toPersianDigits(recommendations.length)}
+                </span>
+              )}
+            </div>
+          }
+          description={t('dashFromYourData')}
+          icon={<Sparkles className="size-4 text-accent" />}
+        />
+        {recommendations.length === 0 ? (
+          <CardBody>
+            <p className="text-sm text-muted-foreground">{t('dashAllClear')}</p>
+          </CardBody>
+        ) : (
+          <div className="grid gap-3 p-4 sm:grid-cols-2">
+            {recommendations.map((rec) => (
+              <div
+                key={rec.id}
+                className={cn(
+                  'min-w-0 overflow-hidden rounded-xl border p-3.5 transition-colors',
+                  SEVERITY_CLASS[rec.severity],
+                )}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className={cn('break-words text-sm font-semibold', SEVERITY_TEXT[rec.severity])}>
+                    {rec.title}
+                  </h3>
+                  <div className="shrink-0 mt-0.5">
+                    {rec.severity === 'critical' ? (
+                      <AlertTriangle className="size-3.5 text-rose-400" />
+                    ) : rec.severity === 'warning' ? (
+                      <AlertTriangle className="size-3.5 text-amber-400" />
+                    ) : rec.severity === 'positive' ? (
+                      <CheckCircle2 className="size-3.5 text-emerald-400" />
+                    ) : (
+                      <Sparkles className="size-3.5 text-sky-400" />
                     )}
+                  </div>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed break-words text-muted-foreground">
+                  {rec.detail}
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed break-words text-muted-foreground/70">
+                  {rec.evidence}
+                </p>
+                {rec.action && (
+                  <Link
+                    to={rec.action.to}
+                    className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
                   >
-                    {yesterdayDelta > 0 ? (
-                      <TrendingUp className="size-3" />
-                    ) : yesterdayDelta < 0 ? (
-                      <TrendingDown className="size-3" />
-                    ) : null}
-                    <span>
-                      {t('dashVsYesterday', {
-                        n: `${yesterdayDelta > 0 ? '+' : ''}${toPersianDigits(yesterdayDelta)}`,
-                      })}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="mt-1 text-[11px] text-muted-foreground">{t('dashNoYesterday')}</div>
+                    <span>{rec.action.label}</span>
+                    <ArrowRight className="size-3 rtl:rotate-180" />
+                  </Link>
                 )}
               </div>
-            </div>
-
-            <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/30 px-2.5 py-1.5 rounded-lg border border-border/40">
-              <Flame className="size-3.5 text-amber-500 shrink-0" />
-              <span>{t('dashDayStreak', { n: toPersianDigits(summary.streak.current) })}</span>
-              <span className="opacity-60">{t('dashStreakBest', { n: toPersianDigits(summary.streak.longest) })}</span>
-            </div>
+            ))}
           </div>
-
-          <div className="mt-3 pt-2.5 border-t border-border/60 flex items-center justify-between text-xs">
-            <span className="text-[11px] text-muted-foreground">
-              {t('dashTrend14')}:{' '}
-              <span className="font-semibold text-foreground">
-                {trend.direction === 'up'
-                  ? t('trendImproving')
-                  : trend.direction === 'down'
-                    ? t('trendDeclining')
-                    : t('trendFlat')}
-              </span>
-            </span>
-            <Link
-              to="/analytics"
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-accent hover:underline"
-            >
-              <span>{t('dashTrend14')}</span>
-              <ArrowRight className="size-3 rtl:rotate-180" />
-            </Link>
-          </div>
-        </Card>
-
-        {/* Recommendations - Extra-Bold, Prominent & High Visibility */}
-        <Card className="flex flex-col lg:col-span-8 xl:col-span-8 border-2 border-accent/40 bg-gradient-to-br from-accent/[0.06] via-accent/[0.02] to-transparent shadow-sm">
-          <CardHeader
-            title={
-              <div className="flex items-center gap-2.5">
-                <span className="flex size-7 items-center justify-center rounded-lg bg-accent text-accent-foreground shadow-xs">
-                  <Sparkles className="size-4 animate-pulse" />
-                </span>
-                <span className="font-extrabold text-foreground text-base sm:text-lg tracking-tight">
-                  {t('dashRecommendations')}
-                </span>
-                {recommendations.length > 0 && (
-                  <span className="rounded-full bg-accent text-accent-foreground px-2.5 py-0.5 text-xs font-bold tabular-nums shadow-xs">
-                    {toPersianDigits(recommendations.length)}
-                  </span>
-                )}
-              </div>
-            }
-            description={t('dashFromYourData')}
-          />
-          {recommendations.length === 0 ? (
-            <CardBody className="flex-1 flex items-center justify-center py-6">
-              <p className="text-sm font-medium text-muted-foreground">{t('dashAllClear')}</p>
-            </CardBody>
-          ) : (
-            <div className="p-3 sm:p-4 space-y-2.5 max-h-80 overflow-y-auto">
-              {recommendations.map((rec) => (
-                <div
-                  key={rec.id}
-                  className={cn(
-                    'rounded-xl border p-3 sm:p-3.5 transition-all shadow-xs hover:shadow-md border-s-4',
-                    rec.severity === 'critical'
-                      ? 'border-rose-500/40 bg-rose-500/10 border-s-rose-500'
-                      : rec.severity === 'warning'
-                        ? 'border-amber-500/40 bg-amber-500/10 border-s-amber-500'
-                        : rec.severity === 'positive'
-                          ? 'border-emerald-500/40 bg-emerald-500/10 border-s-emerald-500'
-                          : 'border-sky-500/40 bg-sky-500/10 border-s-sky-500',
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-2.5 min-w-0">
-                      <div className="mt-0.5 shrink-0">
-                        {rec.severity === 'critical' ? (
-                          <AlertTriangle className="size-4.5 text-rose-500" />
-                        ) : rec.severity === 'warning' ? (
-                          <AlertTriangle className="size-4.5 text-amber-500" />
-                        ) : rec.severity === 'positive' ? (
-                          <CheckCircle2 className="size-4.5 text-emerald-500" />
-                        ) : (
-                          <Sparkles className="size-4.5 text-sky-500" />
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className={cn('text-sm sm:text-base font-extrabold leading-snug', SEVERITY_TEXT[rec.severity])}>
-                          {rec.title}
-                        </h3>
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground font-medium">
-                          {rec.detail}
-                        </p>
-                        <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground/80 font-mono">
-                          {rec.evidence}
-                        </p>
-                      </div>
-                    </div>
-                    {rec.action && (
-                      <Link
-                        to={rec.action.to}
-                        className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-bold text-accent-foreground shadow-sm hover:bg-accent/90 hover:scale-[1.02] active:scale-[0.98] transition-all"
-                      >
-                        <span>{rec.action.label}</span>
-                        <ArrowRight className="size-3.5 rtl:rotate-180" />
-                      </Link>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      </div>
+        )}
+      </Card>
 
       {/* ---------------- 7. next 7 days [VISUALLY ENHANCED & OVERDUE REMOVED] -- */}
       <Card className="mb-4 overflow-hidden">
