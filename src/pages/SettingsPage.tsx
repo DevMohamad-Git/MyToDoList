@@ -92,6 +92,7 @@ import { activityRepo } from '@/storage/activityRepo'
 import { downloadBlob, fsCapabilities, linkFolder, pickTextFile } from '@/storage/fileSystem'
 import { workspaceRepo, type DeepPartial } from '@/storage/workspaceRepo'
 import { achievementRepo } from '@/storage/reviewRepo'
+import { AssistantSettingsCard } from '@/components/assistant/AssistantSettingsCard'
 import { useAppearance } from '@/stores/appearance'
 import { useNavigationModules, type NavModuleKey } from '@/stores/navigationModules'
 import { useWorkspace, useWorkspaceStore } from '@/stores/workspace'
@@ -281,6 +282,12 @@ const MODULE_CONFIG_ITEMS: ModuleConfigItem[] = [
     titleKey: 'setModuleAchievements',
     descKey: 'setModuleAchievementsDesc',
     icon: Trophy,
+  },
+  {
+    key: 'assistant',
+    titleKey: 'setModuleAssistant',
+    descKey: 'setModuleAssistantDesc',
+    icon: Sparkles,
   },
 ]
 
@@ -672,6 +679,9 @@ export function SettingsPage() {
             </div>
           </CardBody>
         </Card>
+
+        {/* ------------------------------------------------------- assistant -- */}
+        <AssistantSettingsCard workspaceId={workspace.id} />
 
         {/* -------------------------------------------------------- planning -- */}
         <Card>

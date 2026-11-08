@@ -8,11 +8,12 @@ import {
   RotateCcw,
   Search,
   ShieldAlert,
+  Sparkles,
   SlidersHorizontal,
   X,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { QuickAddDialog } from '@/components/tasks/QuickAddDialog'
 import { TaskBatchBar } from '@/components/tasks/TaskBatchBar'
 import { TaskEditorModal } from '@/components/tasks/TaskEditorModal'
@@ -46,7 +47,7 @@ import { PRIORITIES, type ID, type Priority, type Task } from '@/types'
 import { cn } from '@/utils/cn'
 
 /**
- * Tasks Page — The centralized task management hub of FlowOS.
+ * Tasks Page â€” The centralized task management hub of FlowOS.
  * Incorporates three modular phases:
  *  - Phase 1: Quick wins (Debounced search, '/' focus shortcut, workspace stats, counts, undo toasts)
  *  - Phase 2: Performance (Indexed compound query optimization, smooth Virtual List)
@@ -400,7 +401,7 @@ export function TasksPage() {
                 type="button"
                 onClick={() => setSearch('')}
                 className="absolute top-1/2 end-2.5 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
-                title="پاک کردن"
+                title="Ù¾Ø§Ú© Ú©Ø±Ø¯Ù†"
               >
                 <X className="size-4" />
               </button>
@@ -453,7 +454,7 @@ export function TasksPage() {
           </div>
           <div className="flex items-center gap-2.5 shrink-0">
             <span className="text-xl font-bold tabular-nums text-foreground" dir="ltr">
-              {sortedTasks?.length ?? '…'}
+              {sortedTasks?.length ?? 'â€¦'}
             </span>
             <div className="flex size-8 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500 dark:bg-blue-400/15 dark:text-blue-400">
               <ListFilter className="size-4" />
@@ -659,6 +660,13 @@ export function TasksPage() {
                     : t('bulkSelectAll')}
               </Button>
             ) : null}
+
+            <Link to="/assistant?prompt=%DA%A9%D8%A7%D8%B1%D9%87%D8%A7%DB%8C%20%D8%A8%D8%A7%D8%B2%20%D9%85%D9%86%20%D8%B1%D9%88%20%D8%A8%D8%B1%D8%B1%D8%B3%DB%8C%20%DA%A9%D9%86">
+              <Button size="sm" variant="secondary" className="h-8 gap-1.5 text-xs text-accent">
+                <Sparkles className="size-3.5" />
+                <span className="hidden sm:inline">{t('withAssistant')}</span>
+              </Button>
+            </Link>
           </div>
         </div>
       </Card>
@@ -858,8 +866,8 @@ export function TasksPage() {
         message={
           bulkDeleting
             ? t('toastBulkDeleted', { n: bulkDeleting.length }) +
-              ' — ' +
-              t('tasksDeleteMsg', { title: '…' })
+              ' â€” ' +
+              t('tasksDeleteMsg', { title: 'â€¦' })
             : null
         }
       />

@@ -9,6 +9,7 @@ import {
   Plus,
   Repeat,
   Settings,
+  Sparkles,
   Target,
   Timer,
   Trophy,
@@ -45,6 +46,7 @@ const NAV_MODULES: (NavItem & { key: NavModuleKey })[] = [
   { key: 'analytics', to: '/analytics', label: 'navAnalytics', icon: BarChart3 },
   { key: 'reviews', to: '/reviews', label: 'navReviews', icon: ClipboardCheck },
   { key: 'achievements', to: '/achievements', label: 'navAchievements', icon: Trophy },
+  { key: 'assistant', to: '/assistant', label: 'navAssistant', icon: Sparkles },
 ]
 
 /**

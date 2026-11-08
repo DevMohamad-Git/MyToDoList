@@ -52,6 +52,48 @@ export default defineConfig({
     // running.
     host: true,
     port: 5173,
+    proxy: {
+      '/api-proxy/openrouter': {
+        target: 'https://openrouter.ai/api/v1',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api-proxy\/openrouter/, ''),
+      },
+      '/api-proxy/groq': {
+        target: 'https://api.groq.com/openai/v1',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api-proxy\/groq/, ''),
+      },
+      '/api-proxy/gemini': {
+        target: 'https://generativelanguage.googleapis.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api-proxy\/gemini/, ''),
+      },
+      '/api-proxy/mistral': {
+        target: 'https://api.mistral.ai',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api-proxy\/mistral/, ''),
+      },
+      '/api-proxy/cerebras': {
+        target: 'https://api.cerebras.ai',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api-proxy\/cerebras/, ''),
+      },
+      '/api-proxy/tavily': {
+        target: 'https://api.tavily.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api-proxy\/tavily/, ''),
+      },
+      '/api-proxy/serper': {
+        target: 'https://google.serper.dev',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api-proxy\/serper/, ''),
+      },
+      '/api-proxy/exa': {
+        target: 'https://api.exa.ai',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api-proxy\/exa/, ''),
+      },
+    },
   },
   preview: {
     host: true,

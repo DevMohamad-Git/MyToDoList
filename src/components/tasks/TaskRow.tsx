@@ -1,11 +1,8 @@
 import {
   AlarmClock,
-  CalendarClock,
-  Copy,
   ExternalLink,
   FileText,
   Link2,
-  MoreHorizontal,
   Paperclip,
   Pencil,
   Play,
@@ -17,7 +14,6 @@ import { useState, type ReactNode } from 'react'
 import { TaskContextMenu } from '@/components/tasks/TaskContextMenu'
 import {
   Badge,
-  Menu,
   PriorityDot,
   StatusBadge,
   TagBadge,
@@ -31,8 +27,8 @@ import { formatDuration, formatRelativeDay } from '@/utils/date'
 
 /**
  * One task as an optimized, single-line list row.
- * Includes hover-revealed bulk checkbox, inline metadata badges, hover actions,
- * and context menu.
+ * Includes hover-revealed bulk checkbox, all metadata badges alongside the title (on the right),
+ * and hover quick actions (Play, Edit, Trash) on the left.
  */
 export function TaskRow({
   task,
@@ -76,36 +72,6 @@ export function TaskRow({
   const closed = CLOSED_TASK_STATUSES.includes(task.status)
   const overdue = isTaskOverdue(task)
 
-  const menuItems = [
-    onEdit && {
-      label: t('taskEdit'),
-      icon: <Pencil className="size-3.5" />,
-      onSelect: () => onEdit(task),
-    },
-    onStartFocus && {
-      label: t('taskStartFocus'),
-      icon: <Timer className="size-3.5" />,
-      onSelect: () => onStartFocus(task),
-    },
-    onSchedule && {
-      label: t('taskReschedule'),
-      icon: <CalendarClock className="size-3.5" />,
-      onSelect: () => onSchedule(task),
-    },
-    onDuplicate && {
-      label: t('taskDuplicate'),
-      icon: <Copy className="size-3.5" />,
-      onSelect: () => onDuplicate(task),
-    },
-    onDelete && {
-      label: t('cDelete'),
-      icon: <Trash2 className="size-3.5" />,
-      danger: true,
-      separated: true,
-      onSelect: () => onDelete(task),
-    },
-  ].filter(Boolean) as { label: string; icon: ReactNode; onSelect: () => void }[]
-
   return (
     <div
       onContextMenu={(e) => {
@@ -113,14 +79,14 @@ export function TaskRow({
         setContextMenu({ x: e.clientX, y: e.clientY })
       }}
       className={cn(
-        'group flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-border/50 px-3 py-2 transition-colors last:border-b-0 min-h-[44px]',
+        'group flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/50 px-3 py-2 transition-colors last:border-b-0 min-h-[44px]',
         'hover:bg-muted/30',
         selected && 'bg-accent/8',
         className,
       )}
     >
-      {/* Right side: Checkbox, complete circle, priority dot, title, description icon, extra */}
-      <div className="flex items-center gap-2 min-w-0 flex-1">
+      {/* Right side: Checkbox, complete circle, priority dot, title, description icon, AND all metadata badges */}
+      <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
         {onSelectChange ? (
           <input
             type="checkbox"
@@ -194,21 +160,7 @@ export function TaskRow({
           </span>
         ) : null}
 
-        {task.description ? (
-          <span
-            className="hidden xl:inline-block truncate text-xs text-muted-foreground/60 max-w-44"
-            dir="auto"
-            title={task.description}
-          >
-            — {task.description}
-          </span>
-        ) : null}
-
-        {extra}
-      </div>
-
-      {/* Left side: Metadata Badges + Hover Actions */}
-      <div className="flex flex-wrap items-center gap-1.5 shrink-0 ps-6 md:ps-0">
+        {/* Metadata Badges placed right next to the title */}
         {project ? (
           <Badge
             className="border-transparent text-xs"
@@ -286,7 +238,11 @@ export function TaskRow({
           <TagBadge key={tag} tag={tag} />
         ))}
 
-        {/* Hover Quick Action Buttons */}
+        {extra}
+      </div>
+
+      {/* Left side: Hover Quick Actions (Play, Edit, Trash) */}
+      <div className="flex items-center gap-1 shrink-0 ps-6 sm:ps-0">
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           {onStartFocus ? (
             <button
@@ -316,20 +272,18 @@ export function TaskRow({
             </button>
           ) : null}
 
-          {menuItems.length > 0 ? (
-            <Menu
-              className="shrink-0"
-              items={menuItems}
-              trigger={
-                <button
-                  type="button"
-                  aria-label={t('taskActions', { title: task.title })}
-                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
-                >
-                  <MoreHorizontal className="size-4" />
-                </button>
-              }
-            />
+          {onDelete ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete(task)
+              }}
+              title={t('cDelete')}
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-rose-500/15 hover:text-rose-500 transition-colors cursor-pointer"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
           ) : null}
         </div>
       </div>

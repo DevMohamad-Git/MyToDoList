@@ -71,6 +71,7 @@ describe('navigationModules store', () => {
     storeState.setModuleEnabled('planner', false)
     storeState.setModuleEnabled('projects', false)
     storeState.setModuleEnabled('focus', false)
+    storeState.setModuleEnabled('assistant', false)
 
     const currentState = mod.useNavigationModules.getState().enabledModules
     expect(currentState.tasks).toBe(true)

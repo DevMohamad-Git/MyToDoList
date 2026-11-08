@@ -19,6 +19,7 @@ import {
   Timer,
   TrendingDown,
   TrendingUp,
+  X,
 } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -102,6 +103,10 @@ export function DashboardPage() {
   // Daily Scratchpad persisted in localStorage
   const currentTodayKey = todayKey()
   const scratchpadKey = `flowos_scratchpad_${workspace.id}_${currentTodayKey}`
+  const [bannerDismissed, setBannerDismissed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return sessionStorage.getItem('flowos_dismissed_assistant_banner') === '1'
+  })
   const [scratchpad, setScratchpad] = useState(() => {
     if (typeof window === 'undefined') return ''
     return localStorage.getItem(scratchpadKey) ?? ''
@@ -323,6 +328,36 @@ export function DashboardPage() {
           </div>
         }
       />
+
+      {/* ---------------------------------- quiet assistant suggestion banner -- */}
+      {!bannerDismissed && (
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-accent/20 bg-accent/5 px-3.5 py-2 text-xs text-foreground transition-all">
+          <div className="flex items-center gap-2 min-w-0">
+            <Sparkles className="size-3.5 shrink-0 text-accent" />
+            <span className="truncate">{t('dashAssistantSuggest')}</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Link to="/assistant?prompt=%D8%A7%D9%85%D8%B1%D9%88%D8%B2%D9%85%20%D8%B1%D9%88%20%D8%A8%D8%B1%D9%86%D8%A7%D9%85%D9%87%E2%80%8C%D8%B1%DB%8C%D8%B2%DB%8C%20%DA%A9%D9%86">
+              <Button size="sm" variant="secondary" className="h-6 px-2 text-[11px] text-accent">
+                {t('dashAssistantAction')}
+              </Button>
+            </Link>
+            <button
+              type="button"
+              onClick={() => {
+                setBannerDismissed(true)
+                if (typeof window !== 'undefined') {
+                  sessionStorage.setItem('flowos_dismissed_assistant_banner', '1')
+                }
+              }}
+              className="text-muted-foreground hover:text-foreground p-0.5"
+              title="بستن پیشنهاد"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ------------------------------------------- 2. active focus banner -- */}
       {(focusRunning || focusElapsed > 0) && (

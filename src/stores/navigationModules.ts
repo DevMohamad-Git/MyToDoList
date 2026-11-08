@@ -12,6 +12,7 @@ export type NavModuleKey =
   | 'analytics'
   | 'reviews'
   | 'achievements'
+  | 'assistant'
 
 export interface NavigationModulesState {
   enabledModules: Record<NavModuleKey, boolean>
@@ -27,6 +28,7 @@ export const DEFAULT_ENABLED_MODULES: Record<NavModuleKey, boolean> = {
   planner: true,
   projects: true,
   focus: true,
+  assistant: true,
   habits: false,
   goals: false,
   analytics: false,
@@ -40,6 +42,7 @@ export const FULL_MODULES: Record<NavModuleKey, boolean> = {
   planner: true,
   projects: true,
   focus: true,
+  assistant: true,
   habits: true,
   goals: true,
   analytics: true,

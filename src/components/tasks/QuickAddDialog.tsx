@@ -1,5 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Paperclip, Plus, X } from 'lucide-react'
+import { Paperclip, Plus, Sparkles, X } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useEffect, useRef, useState } from 'react'
 import {
   Button,
@@ -94,6 +95,7 @@ export function QuickAddDialog({
 }) {
   const t = useT()
   const workspaceId = useWorkspaceId()
+  const navigate = useNavigate()
   const projects = useLiveQuery(() => projectRepo.active(workspaceId), [workspaceId]) ?? []
 
   const [raw, setRaw] = useState('')
@@ -214,6 +216,18 @@ export function QuickAddDialog({
       description={t('qaDesc')}
       footer={
         <>
+          <Button
+            type="button"
+            variant="secondary"
+            className="gap-1.5 me-auto text-accent"
+            onClick={() => {
+              onClose()
+              navigate(`/assistant?prompt=${encodeURIComponent(raw ? `یک کار جدید برام بساز: ${raw}` : 'یک کار جدید برام بساز')}`)
+            }}
+          >
+            <Sparkles className="size-3.5" />
+            <span>{t('withAssistant')}</span>
+          </Button>
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             {t('cCancel')}
           </Button>

@@ -7,6 +7,7 @@ import { Button, Card, Toaster } from '@/components/ui'
 import { useI18n } from '@/i18n'
 import { requestPersistentStorage } from '@/database/db'
 import { AchievementsPage } from '@/pages/AchievementsPage'
+import { AssistantPage } from '@/pages/AssistantPage'
 import { AnalyticsPage } from '@/pages/AnalyticsPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { FocusPage } from '@/pages/FocusPage'
@@ -64,6 +65,7 @@ export function App() {
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="reviews" element={<ReviewsPage />} />
             <Route path="achievements" element={<AchievementsPage />} />
+            <Route path="assistant" element={<AssistantPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

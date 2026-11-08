@@ -11,6 +11,7 @@ import {
   Trophy,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Badge,
   Button,
@@ -254,10 +255,18 @@ export function HabitsPage() {
             : 'Small repeated actions, tracked by day with streaks that never punish an unfinished today.'
         }
         actions={
-          <Button variant="primary" onClick={() => setCreateOpen(true)}>
+          <div className="flex items-center gap-2">
+            <Link to="/assistant?prompt=%D9%85%DB%8C%E2%80%8C%D8%AE%D9%88%D8%A7%D9%85%20%DB%8C%DA%A9%20%D8%B9%D8%A7%D8%AF%D8%AA%20%D8%AC%D8%AF%DB%8C%D8%AF%20%D8%A8%D8%B3%D8%A7%D8%B2%D9%85">
+              <Button variant="secondary" className="gap-1.5 text-accent">
+                <Sparkles className="size-4" />
+                <span>{isFa ? 'با دستیار' : 'With Assistant'}</span>
+              </Button>
+            </Link>
+            <Button variant="primary" onClick={() => setCreateOpen(true)}>
             <Plus className="size-4" />
             {isFa ? 'عادت جدید' : 'New habit'}
-          </Button>
+            </Button>
+          </div>
         }
       />
 

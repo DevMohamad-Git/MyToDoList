@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import {
   ArrowUpDown,
   FolderKanban,
@@ -6,6 +7,7 @@ import {
   LayoutGrid,
   Plus,
   Search,
+  Sparkles,
   X,
 } from 'lucide-react'
 import {
@@ -167,16 +169,24 @@ function ProjectsPageContent() {
         title={t('projectsTitle')}
         description={t('projectsDesc')}
         actions={
-          <Button
-            variant="primary"
-            onClick={() => {
-              setCreateDefaultStatus('planning')
-              setCreateOpen(true)
-            }}
-          >
-            <Plus className="size-4" />
-            {t('projectsNewProject')}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link to={`/assistant?prompt=${encodeURIComponent('یک پروژه جدید با کارهاش برام بساز')}`}>
+              <Button variant="secondary" className="gap-1.5 text-accent">
+                <Sparkles className="size-4" />
+                <span>{t('withAssistant')}</span>
+              </Button>
+            </Link>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setCreateDefaultStatus('planning')
+                setCreateOpen(true)
+              }}
+            >
+              <Plus className="size-4" />
+              {t('projectsNewProject')}
+            </Button>
+          </div>
         }
       />
 
