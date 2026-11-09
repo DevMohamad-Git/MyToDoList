@@ -21,6 +21,7 @@ import { QuickAddDialog } from '@/components/tasks/QuickAddDialog'
 import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher'
 import { Button } from '@/components/ui'
 import { useT, type TranslationKey } from '@/i18n'
+import { useTaskReminders } from '@/hooks/useTaskReminders'
 import { getPhaseMinutes, useFocusStore } from '@/stores/focusStore'
 import { useNavigationModules, type NavModuleKey } from '@/stores/navigationModules'
 import { useSettings, useWorkspaceId } from '@/stores/workspace'
@@ -63,6 +64,9 @@ export function AppShell() {
   const workspaceId = useWorkspaceId()
   const settings = useSettings()
   const enabledModules = useNavigationModules((s) => s.enabledModules)
+
+  // Continuous background task reminders across all pages
+  useTaskReminders(workspaceId)
 
   const visibleNav = useMemo<NavItem[]>(() => {
     const active = NAV_MODULES.filter((item) => enabledModules[item.key])

@@ -732,6 +732,14 @@ export const en = {
   plannerNotificationsEnabled: 'Live task alerts are active',
   plannerNotificationsDisabled: 'Live task alerts are paused',
   plannerEnableNotifications: 'Enable live alerts',
+  plannerEnableNotifTitle: 'Enable desktop popup alerts',
+  plannerEnableNotifDesc: 'To receive task start alerts even while watching videos or working in other apps, click the button below.',
+  plannerEnableNotifBtn: 'Enable desktop popup',
+  plannerTestNotifBtn: 'Test desktop popup',
+  plannerTestNotifTitle: '🔔 FlowOS test alert',
+  plannerTestNotifBody: 'Desktop popup alerts are working! You will now receive alerts even outside the browser.',
+  plannerTestNotifSent: 'Test notification sent. Did you see the desktop popup in the corner?',
+  plannerNotifBlockedAlert: 'Notifications are blocked in your browser. Click the lock/settings icon next to the address bar and set Notifications to Allow.',
 
   /* ----------------------------------------------------------- goals page -- */
   goalsTitle: 'Goals',

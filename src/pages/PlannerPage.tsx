@@ -20,6 +20,13 @@ import {
   BellRing,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  createWorkerTicker,
+  getNotificationPermission,
+  playNotificationChime,
+  requestNotificationPermission,
+  sendDesktopNotification,
+} from '@/services/notifications'
 import { buildDayPlan, effectiveDuration } from '@/services/planner'
 import {
   autoSchedule,
@@ -118,88 +125,34 @@ export function PlannerPage() {
     const saved = localStorage.getItem('flow_planner_notifications')
     return saved !== null ? saved === 'true' : true
   })
+  const [permission, setPermission] = useState(getNotificationPermission())
 
-  // Live ticker: updates "now" every 20s so time indicators and transition notifications stay fresh
+  // Live ticker: updates "now" every 20s using unthrottled worker so it stays accurate in background
   useEffect(() => {
-    const timer = setInterval(() => {
+    const stopTicker = createWorkerTicker(() => {
       setNow(new Date())
     }, 20_000)
-    return () => clearInterval(timer)
+    return () => stopTicker()
   }, [])
 
-  // Proactively request desktop notification permission so system popups work outside the browser
-  useEffect(() => {
-    if (
-      typeof window !== 'undefined' &&
-      'Notification' in window &&
-      Notification.permission === 'default'
-    ) {
-      void Notification.requestPermission()
-    }
-  }, [])
-
-  function playChime() {
-    try {
-      const AudioCtx =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-      if (!AudioCtx) return
-      const ctx = new AudioCtx()
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.connect(gain)
-      gain.connect(ctx.destination)
-      osc.frequency.setValueAtTime(587.33, ctx.currentTime) // D5
-      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12) // A5
-      gain.gain.setValueAtTime(0.09, ctx.currentTime)
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 1.2)
-      osc.start()
-      osc.stop(ctx.currentTime + 1.2)
-      setTimeout(() => void ctx.close(), 1500)
-    } catch {
-      // Audio is a nicety; never break if blocked
-    }
-  }
-
-  function triggerDesktopNotification(title: string, body: string) {
-    if (typeof window === 'undefined' || !('Notification' in window)) return
-
-    const show = () => {
-      try {
-        const notif = new Notification(title, {
-          body,
-          icon: '/favicon.ico',
-          requireInteraction: true,
-          tag: 'flow-task-transition',
-        })
-        notif.onclick = () => {
-          window.focus()
-        }
-      } catch {
-        // Ignore notification errors
-      }
-    }
-
-    if (Notification.permission === 'granted') {
-      show()
-    } else if (Notification.permission === 'default') {
-      void Notification.requestPermission().then((res) => {
-        if (res === 'granted') show()
-      })
+  async function handleGrantPermission() {
+    const res = await requestNotificationPermission()
+    setPermission(res)
+    if (res === 'granted') {
+      setNotificationsEnabled(true)
+      localStorage.setItem('flow_planner_notifications', 'true')
+      toast.success(t('focusNotifGranted'))
+    } else {
+      toast.info(t('plannerNotifBlockedAlert'))
     }
   }
 
   async function handleToggleNotifications() {
     if (!notificationsEnabled) {
-      if (
-        typeof window !== 'undefined' &&
-        'Notification' in window &&
-        Notification.permission !== 'granted'
-      ) {
-        const res = await Notification.requestPermission()
-        if (res !== 'granted') {
-          toast.info(t('focusNotifDenied') || 'Notification permission not granted.')
-        }
+      const res = await requestNotificationPermission()
+      setPermission(res)
+      if (res !== 'granted') {
+        toast.info(t('plannerNotifBlockedAlert'))
       }
       setNotificationsEnabled(true)
       localStorage.setItem('flow_planner_notifications', 'true')
@@ -209,6 +162,16 @@ export function PlannerPage() {
       localStorage.setItem('flow_planner_notifications', 'false')
       toast.info(t('plannerNotificationsDisabled'))
     }
+  }
+
+  async function triggerDesktopNotification(title: string, body: string) {
+    if (!notificationsEnabled) return
+    playNotificationChime()
+    await sendDesktopNotification({
+      title,
+      body,
+      tag: 'flow-task-transition',
+    })
   }
 
   async function handleUnschedule(task: Task) {
@@ -315,7 +278,7 @@ export function PlannerPage() {
       })
 
       if (notificationsEnabled) {
-        playChime()
+        playNotificationChime()
         const body = previousIncompleteBlock
           ? `${t('plannerPrevTaskPending', { title: previousIncompleteBlock.task.title })} ${t('plannerTransitionDesc', { title: activeBlock.task.title })}`
           : t('plannerTransitionDesc', { title: activeBlock.task.title })
@@ -727,6 +690,38 @@ export function PlannerPage() {
           </div>
         </div>
       </Card>
+
+      {/* ------------------------------------------- desktop notification prompt -- */}
+      {permission !== 'granted' ? (
+        <Card className="mb-4 border-amber-500/40 bg-amber-500/10 p-3.5 shadow-sm animate-in fade-in">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/20 text-amber-500">
+                <BellOff className="size-4.5" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-foreground">
+                  {t('plannerEnableNotifTitle')}
+                </h4>
+                <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">
+                  {t('plannerEnableNotifDesc')}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+              <Button
+                size="sm"
+                variant="primary"
+                className="h-8 text-xs font-semibold gap-1.5"
+                onClick={() => void handleGrantPermission()}
+              >
+                <Bell className="size-3.5" />
+                <span>{t('plannerEnableNotifBtn')}</span>
+              </Button>
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       {/* ---------------------------------- behind schedule & transition suggestions -- */}
       {reschedulePlans.length > 0 || activeTransition ? (

@@ -731,6 +731,14 @@ export const fa: Dictionary = {
   plannerNotificationsEnabled: 'اعلان‌های زنده فعال است',
   plannerNotificationsDisabled: 'اعلان‌های زنده غیرفعال است',
   plannerEnableNotifications: 'فعال‌سازی اعلان‌های زنده',
+  plannerEnableNotifTitle: 'فعال‌سازی اعلان‌های پاپ‌آپ دسکتاپ',
+  plannerEnableNotifDesc: 'برای اینکه حتی هنگام دیدن ویدیو در یوتیوب یا کار در سایر برنامه‌ها اعلان زمان کار را دریافت کنید، روی دکمه زیر کلیک کنید.',
+  plannerEnableNotifBtn: 'فعال‌سازی پاپ‌آپ دسکتاپ',
+  plannerTestNotifBtn: 'تست پاپ‌آپ دسکتاپ',
+  plannerTestNotifTitle: '🔔 اعلان آزمایشی FlowOS',
+  plannerTestNotifBody: 'اعلان‌های پاپ‌آپ دسکتاپ با موفقیت فعال هستند! اکنون حتی خارج از مرورگر نیز هشدارها را دریافت خواهید کرد.',
+  plannerTestNotifSent: 'اعلان تستی ارسال شد. آیا پاپ‌آپ ویندوز را در گوشه صفحه دیدید؟',
+  plannerNotifBlockedAlert: 'مرورگر اجازه نمایش اعلان را مسدود کرده است. لطفاً روی آیکون قفل/تنظیمات کنار آدرس‌بار کلیک کرده و دسترسی Notifications را روی Allow بگذارید.',
 
   /* ----------------------------------------------------------- goals page -- */
   goalsTitle: 'اهداف',
