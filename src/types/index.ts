@@ -281,6 +281,17 @@ export interface FocusSession {
 
 /* ------------------------------------------------------------------ goal -- */
 
+export const GOAL_TARGET_TYPES = ['standard', 'financial', 'metric', 'habit'] as const
+export type GoalTargetType = (typeof GOAL_TARGET_TYPES)[number]
+
+export interface FinancialTransaction {
+  id: ID
+  type: 'deposit' | 'withdrawal' // واریز | برداشت
+  amount: number
+  date: ISODateTime
+  note?: string
+}
+
 export interface Goal {
   id: ID
   workspaceId: ID
@@ -291,6 +302,12 @@ export interface Goal {
   deadline: ISODateTime | null
   milestones: Milestone[]
   linkedProjectIds: ID[]
+  linkedHabitIds?: ID[]
+  targetType?: GoalTargetType
+  targetAmount?: number | null
+  currentAmount?: number | null
+  unit?: string
+  financialTransactions?: FinancialTransaction[]
   /** Manual progress override 0–100; `null` derives from milestones + linked work. */
   manualProgress: number | null
   notes: string

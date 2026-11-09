@@ -1,7 +1,11 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
+  AlertTriangle,
   ArrowUpDown,
+  CheckCircle2,
+  Clock,
+  ExternalLink,
   FolderKanban,
   Kanban,
   LayoutGrid,
@@ -58,10 +62,12 @@ export function ProjectsPage() {
 
 function ProjectsPageContent() {
   const t = useT()
+  const navigate = useNavigate()
   const workspaceId = useWorkspaceId()
   const { loading, data } = useProjectsData(workspaceId)
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
+  const [healthFilter, setHealthFilter] = useState<'on_track' | 'needs_attention' | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<SortBy>('order')
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
@@ -90,6 +96,17 @@ function ProjectsPageContent() {
       result = result.filter((p) => p && p.status === 'on_hold')
     } else if (statusFilter === 'completed') {
       result = result.filter((p) => p && p.status === 'completed')
+    }
+
+    // Health filtering from interactive stat tiles
+    if (healthFilter === 'on_track') {
+      result = result.filter((p) => p && statsById.get(p.id)?.health === 'on_track')
+    } else if (healthFilter === 'needs_attention') {
+      result = result.filter((p) => {
+        if (!p) return false
+        const h = statsById.get(p.id)?.health
+        return h === 'at_risk' || h === 'off_track'
+      })
     }
 
     // Search query filtering
@@ -134,7 +151,7 @@ function ProjectsPageContent() {
     })
 
     return result
-  }, [projects, statusFilter, searchQuery, sortBy, statsById])
+  }, [projects, statusFilter, healthFilter, searchQuery, sortBy, statsById])
 
   const handleMarkCompleted = useCallback(async (project: Project) => {
     await projectRepo.update(project.id, { status: 'completed' })
@@ -192,28 +209,47 @@ function ProjectsPageContent() {
 
       {/* Portfolio Health & Summary Bar */}
       {summary && summary.total > 0 ? (
-        <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-6 grid items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile
             label={t('projectsStatActive')}
             value={<span dir="ltr">{summary.active}</span>}
+            icon={<FolderKanban className="size-4 text-muted-foreground" />}
             hint={t('projectsStatActiveHint', { completed: summary.completed, total: summary.total })}
+            onClick={healthFilter ? () => setHealthFilter(null) : undefined}
+            title={healthFilter ? t('projectsClearHealthFilter') : undefined}
           />
           <StatTile
             label={t('projectsStatOnTrack')}
             value={<span dir="ltr">{summary.onTrack}</span>}
+            icon={<CheckCircle2 className="size-4 text-emerald-500" />}
             tone={summary.onTrack > 0 ? 'accent' : 'default'}
             hint={t('projectsStatOnTrackHint')}
+            onClick={() => setHealthFilter((prev) => (prev === 'on_track' ? null : 'on_track'))}
+            active={healthFilter === 'on_track'}
+            title={t('projectsFilterOnTrack')}
           />
           <StatTile
             label={t('projectsStatAttention')}
             value={<span dir="ltr">{(summary.atRisk || 0) + (summary.offTrack || 0)}</span>}
+            icon={<AlertTriangle className="size-4 text-rose-500" />}
             tone={(summary.atRisk || 0) + (summary.offTrack || 0) > 0 ? 'danger' : 'default'}
             hint={t('projectsStatAttentionHint', { off: summary.offTrack || 0, risk: summary.atRisk || 0 })}
+            onClick={() => setHealthFilter((prev) => (prev === 'needs_attention' ? null : 'needs_attention'))}
+            active={healthFilter === 'needs_attention'}
+            title={t('projectsFilterAttention')}
           />
           <StatTile
             label={t('projectsStatTracked')}
             value={formatDuration(summary.totalTrackedMinutes)}
-            hint={t('projectsStatAvgProgress', { p: summary.avgProgress })}
+            icon={<Clock className="size-4 text-blue-500" />}
+            hint={
+              <span className="flex items-center justify-between gap-1">
+                <span>{t('projectsStatAvgProgress', { p: summary.avgProgress })}</span>
+                <ExternalLink className="size-3 shrink-0 opacity-60" />
+              </span>
+            }
+            onClick={() => navigate('/analytics')}
+            title={t('projectsViewAnalyticsHint')}
           />
         </div>
       ) : null}
@@ -265,35 +301,52 @@ function ProjectsPageContent() {
           </div>
         </div>
 
-        {/* Right: Search & Sort Controls */}
-        <div className="flex flex-1 items-center justify-end gap-2 sm:max-w-md">
-          {/* Search Box */}
-          <div className="relative min-w-[160px] flex-1">
-            <Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        {/* Right: Search, Health Filter Chip & Sort Controls */}
+        <div className="flex flex-1 items-center gap-2 min-w-[280px]">
+          {/* Active Health Filter Chip */}
+          {healthFilter ? (
+            <div className="flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent shrink-0 animate-in fade-in">
+              <span>
+                {healthFilter === 'on_track' ? t('projectsStatOnTrack') : t('projectsStatAttention')}
+              </span>
+              <button
+                type="button"
+                onClick={() => setHealthFilter(null)}
+                className="ms-0.5 rounded p-0.5 hover:bg-accent/20 hover:text-foreground transition-colors cursor-pointer"
+                title={t('projectsClearHealthFilter')}
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          ) : null}
+
+          {/* Expanded Search Box */}
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={t('projectsSearchPlaceholder')}
-              className="h-8 ps-8 pe-7 text-xs"
+              className="h-9 w-full ps-9 pe-8 text-xs bg-muted/20 focus:bg-background transition-colors"
             />
             {searchQuery ? (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute end-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                className="absolute end-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5 cursor-pointer"
               >
-                <X className="size-3" />
+                <X className="size-3.5" />
               </button>
             ) : null}
           </div>
 
           {/* Sort Dropdown */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5 shrink-0">
             <ArrowUpDown className="size-3.5 text-muted-foreground" />
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as SortBy)}
-              className="h-8 rounded-lg border border-input bg-background px-2 text-xs focus:border-accent focus:outline-none"
+              className="h-9 rounded-lg border border-input bg-background px-2 text-xs focus:border-accent focus:outline-none cursor-pointer"
             >
               <option value="order">{t('projectsSortOrder')}</option>
               <option value="deadline_asc">{t('projectsSortDeadline')}</option>

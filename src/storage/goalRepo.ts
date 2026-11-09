@@ -1,8 +1,9 @@
 import { db } from '@/database/db'
 import { createGoal } from '@/database/factories'
 import { logActivity } from '@/storage/activityRepo'
-import type { Goal, GoalStatus, ID, Milestone } from '@/types'
+import type { FinancialTransaction, Goal, GoalStatus, ID, Milestone } from '@/types'
 import { nowISO } from '@/utils/date'
+import { newId } from '@/utils/id'
 import { byOrderThenCreated } from '@/utils/math'
 
 export const goalRepo = {
@@ -75,6 +76,86 @@ export const goalRepo = {
       linkedProjectIds: goal.linkedProjectIds.filter((p) => p !== projectId),
       updatedAt: nowISO(),
     })
+  },
+
+  async linkHabit(goalId: ID, habitId: ID): Promise<void> {
+    const goal = await db.goals.get(goalId)
+    if (!goal) return
+    const current = goal.linkedHabitIds ?? []
+    if (current.includes(habitId)) return
+    await db.goals.update(goalId, {
+      linkedHabitIds: [...current, habitId],
+      updatedAt: nowISO(),
+    })
+  },
+
+  async unlinkHabit(goalId: ID, habitId: ID): Promise<void> {
+    const goal = await db.goals.get(goalId)
+    if (!goal) return
+    const current = goal.linkedHabitIds ?? []
+    await db.goals.update(goalId, {
+      linkedHabitIds: current.filter((h) => h !== habitId),
+      updatedAt: nowISO(),
+    })
+  },
+
+  async addTransaction(
+    goalId: ID,
+    tx: { type: 'deposit' | 'withdrawal'; amount: number; note?: string; date?: string },
+  ): Promise<Goal | undefined> {
+    const goal = await db.goals.get(goalId)
+    if (!goal) return undefined
+    const cleanAmount = Math.max(0, Number(tx.amount) || 0)
+    if (cleanAmount <= 0) return goal
+
+    const current = goal.currentAmount ?? 0
+    const nextAmount = tx.type === 'deposit' ? current + cleanAmount : Math.max(0, current - cleanAmount)
+    const newTx: FinancialTransaction = {
+      id: newId(),
+      type: tx.type,
+      amount: cleanAmount,
+      date: tx.date || nowISO(),
+      note: tx.note?.trim() || '',
+    }
+    const transactions = [...(goal.financialTransactions ?? []), newTx]
+
+    const next: Goal = {
+      ...goal,
+      currentAmount: nextAmount,
+      financialTransactions: transactions,
+      updatedAt: nowISO(),
+    }
+    await db.goals.put(next)
+    await logActivity(
+      goal.workspaceId,
+      'goal_updated',
+      'goal',
+      goalId,
+      tx.type === 'deposit'
+        ? `واریز ${cleanAmount.toLocaleString()} به هدف «${goal.title}»`
+        : `برداشت ${cleanAmount.toLocaleString()} از هدف «${goal.title}»`,
+    )
+    return next
+  },
+
+  async deleteTransaction(goalId: ID, transactionId: ID): Promise<Goal | undefined> {
+    const goal = await db.goals.get(goalId)
+    if (!goal || !goal.financialTransactions) return undefined
+    const tx = goal.financialTransactions.find((t) => t.id === transactionId)
+    if (!tx) return goal
+
+    const current = goal.currentAmount ?? 0
+    const nextAmount = tx.type === 'deposit' ? Math.max(0, current - tx.amount) : current + tx.amount
+    const transactions = goal.financialTransactions.filter((t) => t.id !== transactionId)
+
+    const next: Goal = {
+      ...goal,
+      currentAmount: nextAmount,
+      financialTransactions: transactions,
+      updatedAt: nowISO(),
+    }
+    await db.goals.put(next)
+    return next
   },
 
   /** Deleting a goal detaches its tasks; it never deletes user work. */

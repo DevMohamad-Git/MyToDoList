@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/database/db'
 import { goalStats, projectStats, type GoalStats } from '@/services/progress'
-import type { Goal, ID, Project, Task } from '@/types'
+import type { Goal, Habit, ID, Project, Task } from '@/types'
 import { byOrderThenCreated } from '@/utils/math'
 
 export interface GoalsPortfolioSummary {
@@ -22,8 +22,10 @@ export interface GoalsData {
   goals: Goal[]
   projects: Project[]
   tasks: Task[]
+  habits: Habit[]
   projectsById: Map<ID, Project>
   tasksByGoalId: Map<ID, Task[]>
+  habitsById: Map<ID, Habit>
   statsById: Map<ID, GoalStats>
   portfolioSummary: GoalsPortfolioSummary
 }
@@ -32,7 +34,7 @@ export interface GoalsData {
  * High-performance, isolated reactive data hook for goals.
  *
  * Instead of loading the entire workspace snapshot (which queries 8 tables),
- * this hook only queries the 3 tables relevant to goals (goals, projects, tasks).
+ * this hook queries the tables relevant to goals (goals, projects, tasks, habits).
  * It pre-indexes tasks, computes project progress for rollup in O(N),
  * and derives real-time portfolio summaries for top render speed.
  */
@@ -43,16 +45,18 @@ export function useGoalsData(workspaceId: ID): {
   const raw = useLiveQuery(
     async () => {
       if (!workspaceId) return null
-      const [goals, projects, tasks] = await Promise.all([
+      const [goals, projects, tasks, habits] = await Promise.all([
         db.goals.where('workspaceId').equals(workspaceId).toArray(),
         db.projects.where('workspaceId').equals(workspaceId).toArray(),
         db.tasks.where('workspaceId').equals(workspaceId).toArray(),
+        db.habits.where('workspaceId').equals(workspaceId).toArray(),
       ])
 
       return {
         goals: goals.sort(byOrderThenCreated),
         projects: projects.sort(byOrderThenCreated),
         tasks,
+        habits: habits.filter((h) => !h.archived).sort(byOrderThenCreated),
       }
     },
     [workspaceId],
@@ -123,6 +127,11 @@ export function useGoalsData(workspaceId: ID): {
       }
     }
 
+    const habitsById = new Map<ID, Habit>()
+    for (const habit of raw.habits) {
+      habitsById.set(habit.id, habit)
+    }
+
     const activeCount = raw.goals.filter((g) => g.status === 'active').length
     const achievedCount = raw.goals.filter((g) => g.status === 'achieved').length
 
@@ -130,8 +139,10 @@ export function useGoalsData(workspaceId: ID): {
       goals: raw.goals,
       projects: raw.projects,
       tasks: raw.tasks,
+      habits: raw.habits,
       projectsById,
       tasksByGoalId,
+      habitsById,
       statsById,
       portfolioSummary: {
         total: raw.goals.length,

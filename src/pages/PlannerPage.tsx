@@ -12,10 +12,15 @@ import {
   Plus,
   Search,
   Sparkles,
+  Undo2,
   Wand2,
+  X,
+  Bell,
+  BellOff,
+  BellRing,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
-import { buildDayPlan } from '@/services/planner'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { buildDayPlan, effectiveDuration } from '@/services/planner'
 import {
   autoSchedule,
   behindScheduleReport,
@@ -91,13 +96,129 @@ export function PlannerPage() {
   const [backlogSearch, setBacklogSearch] = useState('')
   const [backlogPriority, setBacklogPriority] = useState<Priority | 'all'>('all')
 
-  // Live minute ticker: updates "now" every 60s so time indicators and behind-schedule stay fresh
+  // Backlog and Timeline drag & drop refs and state
+  const timelineRef = useRef<HTMLDivElement>(null)
+  const backlogRef = useRef<HTMLDivElement>(null)
+  const [draggingBacklogTask, setDraggingBacklogTask] = useState<Task | null>(null)
+  const [dropSlot, setDropSlot] = useState<{ startMinutes: number; duration: number } | null>(null)
+  const [isDraggingOverBacklog, setIsDraggingOverBacklog] = useState(false)
+
+  // Live task transition alert state
+  interface TransitionAlert {
+    currentTask: Task
+    previousTask?: Task | null
+    startTime: number
+    endTime: number
+  }
+
+  const [activeTransition, setActiveTransition] = useState<TransitionAlert | null>(null)
+  const alertedTaskIdsRef = useRef<Set<string>>(new Set())
+  const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
+    if (typeof window === 'undefined') return true
+    const saved = localStorage.getItem('flow_planner_notifications')
+    return saved !== null ? saved === 'true' : true
+  })
+
+  // Live ticker: updates "now" every 20s so time indicators and transition notifications stay fresh
   useEffect(() => {
     const timer = setInterval(() => {
       setNow(new Date())
-    }, 60_000)
+    }, 20_000)
     return () => clearInterval(timer)
   }, [])
+
+  // Proactively request desktop notification permission so system popups work outside the browser
+  useEffect(() => {
+    if (
+      typeof window !== 'undefined' &&
+      'Notification' in window &&
+      Notification.permission === 'default'
+    ) {
+      void Notification.requestPermission()
+    }
+  }, [])
+
+  function playChime() {
+    try {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+      if (!AudioCtx) return
+      const ctx = new AudioCtx()
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime) // D5
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12) // A5
+      gain.gain.setValueAtTime(0.09, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 1.2)
+      osc.start()
+      osc.stop(ctx.currentTime + 1.2)
+      setTimeout(() => void ctx.close(), 1500)
+    } catch {
+      // Audio is a nicety; never break if blocked
+    }
+  }
+
+  function triggerDesktopNotification(title: string, body: string) {
+    if (typeof window === 'undefined' || !('Notification' in window)) return
+
+    const show = () => {
+      try {
+        const notif = new Notification(title, {
+          body,
+          icon: '/favicon.ico',
+          requireInteraction: true,
+          tag: 'flow-task-transition',
+        })
+        notif.onclick = () => {
+          window.focus()
+        }
+      } catch {
+        // Ignore notification errors
+      }
+    }
+
+    if (Notification.permission === 'granted') {
+      show()
+    } else if (Notification.permission === 'default') {
+      void Notification.requestPermission().then((res) => {
+        if (res === 'granted') show()
+      })
+    }
+  }
+
+  async function handleToggleNotifications() {
+    if (!notificationsEnabled) {
+      if (
+        typeof window !== 'undefined' &&
+        'Notification' in window &&
+        Notification.permission !== 'granted'
+      ) {
+        const res = await Notification.requestPermission()
+        if (res !== 'granted') {
+          toast.info(t('focusNotifDenied') || 'Notification permission not granted.')
+        }
+      }
+      setNotificationsEnabled(true)
+      localStorage.setItem('flow_planner_notifications', 'true')
+      toast.success(t('plannerNotificationsEnabled'))
+    } else {
+      setNotificationsEnabled(false)
+      localStorage.setItem('flow_planner_notifications', 'false')
+      toast.info(t('plannerNotificationsDisabled'))
+    }
+  }
+
+  async function handleUnschedule(task: Task) {
+    try {
+      await taskRepo.update(task.id, { startDate: null })
+      toast.success(t('plannerToastReturnedToBacklog', { title: task.title }))
+    } catch (err) {
+      toast.error((err as Error).message || t('plannerToastReturnError'))
+    }
+  }
 
   const { start, end } = dayRange(day)
   const scheduled =
@@ -159,6 +280,52 @@ export function PlannerPage() {
     },
     [workspaceId],
   )
+
+  // Monitor when red current time line enters a task's timeframe
+  useEffect(() => {
+    if (day !== toDayKey(now)) return
+    const nowMinutes = minutesIntoDay(now)
+
+    // Find any block currently active (where red line is inside [start, end))
+    const activeBlock = plan.blocks.find(
+      (b) =>
+        !CLOSED_TASK_STATUSES.includes(b.task.status) &&
+        nowMinutes >= b.start &&
+        nowMinutes < b.end,
+    )
+
+    if (activeBlock && !alertedTaskIdsRef.current.has(activeBlock.task.id)) {
+      alertedTaskIdsRef.current.add(activeBlock.task.id)
+
+      // Find the most recent unfinished block scheduled earlier today
+      const previousIncompleteBlock = [...plan.blocks]
+        .filter(
+          (b) =>
+            b.task.id !== activeBlock.task.id &&
+            b.end <= activeBlock.start &&
+            !CLOSED_TASK_STATUSES.includes(b.task.status),
+        )
+        .sort((a, b) => b.end - a.end)[0]
+
+      setActiveTransition({
+        currentTask: activeBlock.task,
+        previousTask: previousIncompleteBlock?.task ?? null,
+        startTime: activeBlock.start,
+        endTime: activeBlock.end,
+      })
+
+      if (notificationsEnabled) {
+        playChime()
+        const body = previousIncompleteBlock
+          ? `${t('plannerPrevTaskPending', { title: previousIncompleteBlock.task.title })} ${t('plannerTransitionDesc', { title: activeBlock.task.title })}`
+          : t('plannerTransitionDesc', { title: activeBlock.task.title })
+        triggerDesktopNotification(
+          t('plannerTransitionTitle', { title: activeBlock.task.title }),
+          body,
+        )
+      }
+    }
+  }, [now, day, plan.blocks, notificationsEnabled, t])
 
   function shiftDay(delta: number) {
     setDay(toDayKey(addDays(fromDayKey(day), delta)))
@@ -268,8 +435,9 @@ export function PlannerPage() {
   const [dragging, setDragging] = useState<DragState | null>(null)
 
   function handleBlockPointerDown(e: React.PointerEvent, block: (typeof plan.blocks)[number]) {
-    if (e.button !== 0) return
+    if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return
     const startY = e.clientY
+    const startX = e.clientX
     const duration = block.end - block.start
     const initialMinutes = block.start
     let isDragging = false
@@ -282,10 +450,21 @@ export function PlannerPage() {
       rafId = window.requestAnimationFrame(() => {
         rafId = null
         const deltaY = moveEvent.clientY - startY
-        if (!isDragging && Math.abs(deltaY) > 5) {
+        const deltaX = Math.abs(moveEvent.clientX - startX)
+        if (!isDragging && (Math.abs(deltaY) > 5 || deltaX > 5)) {
           isDragging = true
         }
         if (isDragging) {
+          if (backlogRef.current) {
+            const rect = backlogRef.current.getBoundingClientRect()
+            const overBacklog =
+              moveEvent.clientX >= rect.left &&
+              moveEvent.clientX <= rect.right &&
+              moveEvent.clientY >= rect.top &&
+              moveEvent.clientY <= rect.bottom
+            setIsDraggingOverBacklog(overBacklog)
+          }
+
           const deltaMinutes = (deltaY / hourHeight) * 60
           const rawNewMinutes = initialMinutes + deltaMinutes
           const snapped = Math.round(rawNewMinutes / 15) * 15
@@ -305,10 +484,32 @@ export function PlannerPage() {
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
 
+      const wasOverBacklog =
+        isDraggingOverBacklog ||
+        (backlogRef.current
+          ? (() => {
+              const rect = backlogRef.current.getBoundingClientRect()
+              return (
+                upEvent.clientX >= rect.left &&
+                upEvent.clientX <= rect.right &&
+                upEvent.clientY >= rect.top &&
+                upEvent.clientY <= rect.bottom
+              )
+            })()
+          : false)
+
+      setIsDraggingOverBacklog(false)
+      setDragging(null)
+
+      if (wasOverBacklog) {
+        await handleUnschedule(block.task)
+        return
+      }
+
       const deltaY = upEvent.clientY - startY
-      if (!isDragging || Math.abs(deltaY) <= 5) {
+      const deltaX = Math.abs(upEvent.clientX - startX)
+      if (!isDragging || (Math.abs(deltaY) <= 5 && deltaX <= 5)) {
         setEditingTaskId(block.task.id)
-        setDragging(null)
         return
       }
 
@@ -316,8 +517,6 @@ export function PlannerPage() {
       const rawNewMinutes = initialMinutes + deltaMinutes
       const snapped = Math.round(rawNewMinutes / 15) * 15
       const clamped = Math.max(0, Math.min(1440 - duration, snapped))
-
-      setDragging(null)
 
       if (clamped !== initialMinutes) {
         const newStartDate = toISO(dayAtMinutes(day, clamped))
@@ -337,6 +536,87 @@ export function PlannerPage() {
 
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp)
+  }
+
+  // Backlog HTML5 drag & drop handlers
+  function handleBacklogDragStart(e: React.DragEvent<HTMLDivElement>, task: Task) {
+    e.dataTransfer.setData('text/plain', task.id)
+    e.dataTransfer.setData('application/json', JSON.stringify({ taskId: task.id }))
+    e.dataTransfer.effectAllowed = 'move'
+    setDraggingBacklogTask(task)
+  }
+
+  function handleBacklogDragEnd() {
+    setDraggingBacklogTask(null)
+    setDropSlot(null)
+  }
+
+  function handleTimelineDragOver(e: React.DragEvent) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+
+    if (!timelineRef.current) return
+    const rect = timelineRef.current.getBoundingClientRect()
+    const y = e.clientY - rect.top
+    const minutesFromTop = (y / hourHeight) * 60
+    const rawMinutes = startHour * 60 + minutesFromTop
+    const snapped = Math.round(rawMinutes / 15) * 15
+
+    const duration = draggingBacklogTask
+      ? effectiveDuration(draggingBacklogTask, settings.planning)
+      : (settings.planning.defaultTaskDuration ?? 30)
+
+    const maxStart = Math.max(startHour * 60, endHour * 60 - duration)
+    const clamped = Math.max(startHour * 60, Math.min(maxStart, snapped))
+
+    if (!dropSlot || dropSlot.startMinutes !== clamped || dropSlot.duration !== duration) {
+      setDropSlot({ startMinutes: clamped, duration })
+    }
+  }
+
+  function handleTimelineDragLeave(e: React.DragEvent) {
+    if (!timelineRef.current || !e.relatedTarget || !timelineRef.current.contains(e.relatedTarget as Node)) {
+      setDropSlot(null)
+    }
+  }
+
+  async function handleTimelineDrop(e: React.DragEvent) {
+    e.preventDefault()
+    const taskId = e.dataTransfer.getData('text/plain') || draggingBacklogTask?.id
+    const targetSlot = dropSlot
+    setDropSlot(null)
+    setDraggingBacklogTask(null)
+
+    if (!taskId) return
+    const task = allOpen.find((t) => t.id === taskId)
+    if (!task) return
+
+    let targetMinutes = targetSlot?.startMinutes
+    if (targetMinutes == null && timelineRef.current) {
+      const rect = timelineRef.current.getBoundingClientRect()
+      const y = e.clientY - rect.top
+      const minutesFromTop = (y / hourHeight) * 60
+      const rawMinutes = startHour * 60 + minutesFromTop
+      const snapped = Math.round(rawMinutes / 15) * 15
+      const duration = effectiveDuration(task, settings.planning)
+      const maxStart = Math.max(startHour * 60, endHour * 60 - duration)
+      targetMinutes = Math.max(startHour * 60, Math.min(maxStart, snapped))
+    }
+
+    if (targetMinutes == null) return
+
+    const newStartDate = toISO(dayAtMinutes(day, targetMinutes))
+    try {
+      await taskRepo.update(task.id, { startDate: newStartDate, status: 'planned' })
+      toast.success(
+        t('plannerToastSingleScheduled', {
+          title: task.title,
+          time: formatMinutesOfDay(targetMinutes),
+        }),
+      )
+    } catch (err) {
+      toast.error((err as Error).message || t('plannerToastMoveError'))
+    }
   }
 
 
@@ -374,6 +654,21 @@ export function PlannerPage() {
                 <option value={15} className="bg-card text-foreground">{t('plannerBuffer15')}</option>
               </select>
             </div>
+
+            {/* Live Alerts Toggle */}
+            <Button
+              variant={notificationsEnabled ? 'outline' : 'ghost'}
+              size="sm"
+              className={cn(
+                'h-8 gap-1.5 px-2.5 text-xs',
+                notificationsEnabled ? 'border-accent/40 text-accent bg-accent/5' : 'text-muted-foreground',
+              )}
+              onClick={() => void handleToggleNotifications()}
+              title={notificationsEnabled ? t('plannerNotificationsEnabled') : t('plannerNotificationsDisabled')}
+            >
+              {notificationsEnabled ? <Bell className="size-3.5 text-accent" /> : <BellOff className="size-3.5" />}
+              <span className="hidden sm:inline">{t('plannerNotificationsToggle')}</span>
+            </Button>
 
             <Button variant="primary" onClick={runAutoPlan}>
               <Wand2 className="size-4" />
@@ -433,31 +728,96 @@ export function PlannerPage() {
         </div>
       </Card>
 
-      {/* -------------------------------------------------- behind schedule -- */}
-      {reschedulePlans.length > 0 ? (
-        <Card className="mb-4 border-amber-500/30 bg-amber-500/5">
-          <CardHeader
-            title={
-              behind.missedBlocks.length === 1
-                ? t('plannerBehindScheduleTitle1')
-                : t('plannerBehindScheduleTitleN', { n: behind.missedBlocks.length })
-            }
-            description={t('plannerBehindScheduleDesc', { dur: formatDuration(behind.behindMinutes) })}
-            icon={<AlertTriangle className="size-4 text-amber-400" />}
-          />
-          <CardBody className="grid gap-2 sm:grid-cols-3">
-            {reschedulePlans.map((rp) => (
-              <button
-                key={rp.strategy}
-                type="button"
-                onClick={() => setReschedulePlan(rp)}
-                className="rounded-lg border border-border bg-card p-3 text-start transition-colors hover:border-accent"
-              >
-                <div className="text-sm font-medium">{rp.label}</div>
-                <p className="mt-1 text-xs text-muted-foreground">{rp.description}</p>
-              </button>
-            ))}
-          </CardBody>
+      {/* ---------------------------------- behind schedule & transition suggestions -- */}
+      {reschedulePlans.length > 0 || activeTransition ? (
+        <Card className="mb-4 border-amber-500/30 bg-amber-500/5 overflow-hidden">
+          {activeTransition ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2.5 text-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <BellRing className="size-4 shrink-0 text-amber-500 animate-bounce" />
+                <span className="font-semibold text-foreground">
+                  {t('plannerTransitionTitle', { title: activeTransition.currentTask.title })}
+                </span>
+                {activeTransition.previousTask ? (
+                  <span className="text-amber-500 font-medium">
+                    · {t('plannerPrevTaskPending', { title: activeTransition.previousTask.title })}
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {activeTransition.previousTask ? (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6.5 px-2 text-[11px] border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 hover:border-emerald-500"
+                      onClick={async () => {
+                        if (activeTransition.previousTask) {
+                          await taskRepo.toggleComplete(activeTransition.previousTask.id)
+                          toast.success(t('toastCompleted', { title: activeTransition.previousTask.title }))
+                          setActiveTransition((prev) => (prev ? { ...prev, previousTask: null } : null))
+                        }
+                      }}
+                    >
+                      <Check className="size-3" />
+                      <span>{t('plannerCompletePrevTask')}</span>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6.5 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+                      onClick={async () => {
+                        if (activeTransition.previousTask) {
+                          await handleUnschedule(activeTransition.previousTask)
+                          setActiveTransition((prev) => (prev ? { ...prev, previousTask: null } : null))
+                        }
+                      }}
+                    >
+                      <Undo2 className="size-3" />
+                      <span>{t('plannerReturnPrevToBacklog')}</span>
+                    </Button>
+                  </>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTransition(null)}
+                  className="rounded p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  title={t('plannerDismissNotification')}
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {reschedulePlans.length > 0 ? (
+            <>
+              <CardHeader
+                title={
+                  behind.missedBlocks.length === 1
+                    ? t('plannerBehindScheduleTitle1')
+                    : t('plannerBehindScheduleTitleN', { n: behind.missedBlocks.length })
+                }
+                description={t('plannerBehindScheduleDesc', { dur: formatDuration(behind.behindMinutes) })}
+                icon={<AlertTriangle className="size-4 text-amber-400" />}
+              />
+              <CardBody className="grid gap-2 sm:grid-cols-3">
+                {reschedulePlans.map((rp) => (
+                  <button
+                    key={rp.strategy}
+                    type="button"
+                    onClick={() => setReschedulePlan(rp)}
+                    className="rounded-lg border border-border bg-card p-3 text-start transition-colors hover:border-accent"
+                  >
+                    <div className="text-sm font-medium">{rp.label}</div>
+                    <p className="mt-1 text-xs text-muted-foreground">{rp.description}</p>
+                  </button>
+                ))}
+              </CardBody>
+            </>
+          ) : null}
         </Card>
       ) : null}
 
@@ -473,7 +833,17 @@ export function PlannerPage() {
             })}
             icon={<CalendarDays className="size-4" />}
           />
-          <div className="relative" style={{ height: timelineMinutes * (hourHeight / 60) }}>
+          <div
+            ref={timelineRef}
+            className={cn(
+              'relative transition-colors select-none',
+              draggingBacklogTask && 'bg-accent/[0.03] ring-1 ring-accent/30',
+            )}
+            style={{ height: timelineMinutes * (hourHeight / 60) }}
+            onDragOver={handleTimelineDragOver}
+            onDragLeave={handleTimelineDragLeave}
+            onDrop={handleTimelineDrop}
+          >
             {/* Hour Grid Lines with Click-to-Add */}
             {Array.from({ length: endHour - startHour }, (_, i) => {
               const slotHour = startHour + i
@@ -539,6 +909,15 @@ export function PlannerPage() {
 
                   <div
                     onPointerDown={(e) => handleBlockPointerDown(e, block)}
+                    draggable={!closed}
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('text/plain', block.task.id)
+                      e.dataTransfer.setData(
+                        'application/json',
+                        JSON.stringify({ taskId: block.task.id, source: 'timeline' }),
+                      )
+                      e.dataTransfer.effectAllowed = 'move'
+                    }}
                     title={`${block.task.title} · ${formatMinutesOfDay(displayStart)}–${formatMinutesOfDay(displayStart + duration)}${conflict ? ` · ${t('plannerOverlapping')}` : ''} — ${t('plannerDragHint')}`}
                     className={cn(
                       'group/block absolute start-16 end-3 overflow-hidden rounded-lg border px-2.5 py-1.5 text-xs select-none touch-none',
@@ -567,6 +946,20 @@ export function PlannerPage() {
                             {formatMinutesOfDay(block.start)}
                           </span>
                         )}
+                        {!isBeingDragged && !closed ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              void handleUnschedule(block.task)
+                            }}
+                            title={t('plannerReturnToBacklogHint')}
+                            className="opacity-0 group-hover/block:opacity-100 rounded p-0.5 text-muted-foreground hover:bg-accent/20 hover:text-accent transition-all cursor-pointer"
+                            aria-label={t('plannerReturnToBacklog')}
+                          >
+                            <Undo2 className="size-3" />
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                     {height >= 44 ? (
@@ -581,10 +974,39 @@ export function PlannerPage() {
               )
             })}
 
-            {plan.blocks.length === 0 ? (
+            {/* Backlog Drop Target Live Preview */}
+            {dropSlot && draggingBacklogTask ? (
+              <div
+                className="pointer-events-none absolute start-16 end-3 z-30 overflow-hidden rounded-lg border-2 border-dashed border-accent bg-accent/20 px-3 py-2 shadow-lg backdrop-blur-xs transition-all duration-75 animate-in fade-in"
+                style={{
+                  top: ((dropSlot.startMinutes - startHour * 60) * hourHeight) / 60,
+                  height: Math.max(32, (dropSlot.duration * hourHeight) / 60),
+                }}
+              >
+                <div className="flex items-center justify-between gap-2 text-xs font-semibold text-accent">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Sparkles className="size-3.5 shrink-0 animate-pulse text-accent" />
+                    <span className="truncate">{draggingBacklogTask.title}</span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 rounded bg-accent/25 px-1.5 py-0.5 text-[10px] font-bold tabular-nums">
+                    {formatMinutesOfDay(dropSlot.startMinutes)} –{' '}
+                    {formatMinutesOfDay(dropSlot.startMinutes + dropSlot.duration)}
+                  </div>
+                </div>
+                {Math.max(32, (dropSlot.duration * hourHeight) / 60) >= 44 ? (
+                  <div className="mt-1 flex items-center gap-2 text-[11px] text-accent/80 ps-5">
+                    <span>{formatDuration(dropSlot.duration)}</span>
+                    <span>·</span>
+                    <span>{t('plannerDropToSchedule')}</span>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {plan.blocks.length === 0 && !dropSlot ? (
               <div className="absolute inset-0 flex items-center justify-center p-4 text-center pointer-events-none">
                 <p className="text-sm text-muted-foreground">
-                  {t('plannerTimelineEmpty')}
+                  {draggingBacklogTask ? t('plannerDropZoneHint') : t('plannerTimelineEmpty')}
                 </p>
               </div>
             ) : null}
@@ -592,7 +1014,40 @@ export function PlannerPage() {
         </Card>
 
         {/* -------------------------------------------------------- backlog -- */}
-        <Card className="flex flex-col">
+        <Card
+          ref={backlogRef}
+          className={cn(
+            'flex flex-col transition-all',
+            isDraggingOverBacklog && 'ring-2 ring-accent border-accent bg-accent/5',
+          )}
+          onDragOver={(e) => {
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'move'
+            setIsDraggingOverBacklog(true)
+          }}
+          onDragLeave={(e) => {
+            if (!backlogRef.current?.contains(e.relatedTarget as Node)) {
+              setIsDraggingOverBacklog(false)
+            }
+          }}
+          onDrop={async (e) => {
+            e.preventDefault()
+            setIsDraggingOverBacklog(false)
+            const taskId = e.dataTransfer.getData('text/plain')
+            if (taskId) {
+              const task = scheduled.find((t) => t.id === taskId)
+              if (task) {
+                await handleUnschedule(task)
+              }
+            }
+          }}
+        >
+          {isDraggingOverBacklog ? (
+            <div className="flex items-center justify-center gap-2 border-b border-accent/40 bg-accent/15 px-3 py-2 text-xs font-semibold text-accent animate-pulse">
+              <Undo2 className="size-3.5" />
+              <span>{t('plannerDropBacklogHint')}</span>
+            </div>
+          ) : null}
           <CardHeader
             title={t('plannerBacklogTitle')}
             description={t('plannerBacklogDesc')}
@@ -656,7 +1111,16 @@ export function PlannerPage() {
           ) : (
             <div className="divide-y divide-border/40">
               {filteredBacklog.map((task) => (
-                <div key={task.id} className="group relative">
+                <div
+                  key={task.id}
+                  draggable
+                  onDragStart={(e) => handleBacklogDragStart(e, task)}
+                  onDragEnd={handleBacklogDragEnd}
+                  className={cn(
+                    'group relative cursor-grab active:cursor-grabbing transition-all',
+                    draggingBacklogTask?.id === task.id && 'opacity-40 border-dashed border-accent bg-accent/5',
+                  )}
+                >
                   <TaskRow
                     task={task}
                     project={task.projectId ? (projectNames?.get(task.projectId) ?? null) : null}
@@ -664,12 +1128,17 @@ export function PlannerPage() {
                       const next = await taskRepo.toggleComplete(tRow.id)
                       if (next?.status === 'completed') toast.success(t('toastCompleted', { title: next.title }))
                     }}
+                    onOpen={() => setEditingTaskId(task.id)}
+                    onEdit={() => setEditingTaskId(task.id)}
                   />
                   <button
                     type="button"
-                    onClick={() => void scheduleSingle(task)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void scheduleSingle(task)
+                    }}
                     title={t('plannerScheduleTooltip')}
-                    className="absolute top-2.5 end-9 rounded-md border border-border bg-card px-1.5 py-1 text-[10px] font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-accent shadow-sm"
+                    className="absolute top-2.5 end-9 rounded-md border border-border bg-card px-1.5 py-1 text-[10px] font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-accent shadow-sm cursor-pointer"
                   >
                     {t('plannerPlanAction')}
                   </button>

@@ -199,15 +199,14 @@ export interface GoalStats {
   linkedProjects: number
   linkedTasks: number
   completedLinkedTasks: number
+  linkedHabits: number
   daysRemaining: number | null
   onTrack: boolean
 }
 
 /**
  * Goal progress combines its own milestones with the real work linked to it —
- * linked projects' progress and linked tasks' completion. A goal with no linked
- * work falls back to milestones alone, and a goal with neither reports 0 rather
- * than a fabricated number.
+ * linked projects' progress and linked tasks' completion, or financial/metric amount.
  */
 export function goalStats(
   goal: Goal,
@@ -220,7 +219,7 @@ export function goalStats(
   const completedMilestones = goal.milestones.filter((m) => m.completed).length
   const milestonePct = totalMilestones ? ratio(completedMilestones, totalMilestones) * 100 : null
 
-  const relevantProjects = linkedProjects.filter((p) => goal.linkedProjectIds.includes(p.id))
+  const relevantProjects = linkedProjects.filter((p) => goal.linkedProjectIds?.includes(p.id))
   const projectPct = relevantProjects.length
     ? relevantProjects.reduce((acc, p) => acc + (projectProgressById.get(p.id) ?? 0), 0) / relevantProjects.length
     : null
@@ -234,6 +233,14 @@ export function goalStats(
     progress = toPercent(goal.manualProgress)
   } else if (goal.status === 'achieved') {
     progress = 100
+  } else if ((goal.targetType === 'financial' || goal.targetType === 'metric') && goal.targetAmount && goal.targetAmount > 0) {
+    const amountPct = Math.min(100, Math.max(0, ((goal.currentAmount ?? 0) / goal.targetAmount) * 100))
+    // If milestones also exist, average them; otherwise amount progress is the single source of truth
+    if (milestonePct !== null) {
+      progress = toPercent((amountPct + milestonePct) / 2)
+    } else {
+      progress = toPercent(amountPct)
+    }
   } else {
     // Average whichever signals actually exist, so an unused dimension does not
     // drag the number toward zero.
@@ -266,6 +273,7 @@ export function goalStats(
     linkedProjects: relevantProjects.length,
     linkedTasks: ownTasks.length,
     completedLinkedTasks,
+    linkedHabits: goal.linkedHabitIds?.length ?? 0,
     daysRemaining,
     onTrack,
   }

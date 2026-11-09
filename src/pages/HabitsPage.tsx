@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
   BarChart2,
+  Calendar,
   Check,
   FileText,
   Flame,
@@ -47,11 +48,49 @@ import {
   type WeekDay,
 } from '@/types'
 import { cn } from '@/utils/cn'
-import { addDays, formatDayLabel, formatDayNumber, fromDayKey, toDayKey } from '@/utils/date'
+import {
+  addDays,
+  dayKeysBetween,
+  formatDayLabel,
+  formatDayNumber,
+  fromDayKey,
+  monthRange,
+  startOfDay,
+  toDayKey,
+  toPersianDigits,
+} from '@/utils/date'
 import { fireConfetti } from '@/utils/confetti'
 import { HabitIcon, HabitIconPicker } from '@/components/habits/HabitIcon'
 import { HabitDetailModal } from '@/components/habits/HabitDetailModal'
 import { HabitNoteModal } from '@/components/habits/HabitNoteModal'
+
+/** Helper for column headers: full weekday names ('چهارشنبه', 'پنج‌شنبه', ...) and dates */
+function getDayColumnMeta(day: DayKey, today: DayKey, isFa: boolean) {
+  const d = fromDayKey(day)
+  const isToday = day === today
+  const tomorrowKey = toDayKey(addDays(fromDayKey(today), 1))
+  const isTomorrow = day === tomorrowKey
+  const yesterdayKey = toDayKey(addDays(fromDayKey(today), -1))
+  const isYesterday = day === yesterdayKey
+
+  const dayIdx = d.getDay() // 0=Sun, 1=Mon, ..., 6=Sat
+  const faWeekdays = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه', 'شنبه']
+  const enFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+  const headerLabel = isFa ? faWeekdays[dayIdx] : enFull[dayIdx]
+
+  const dayNum = formatDayNumber(day)
+  const formattedDayNum = isFa ? toPersianDigits(String(dayNum)) : String(dayNum)
+
+  return {
+    isToday,
+    isTomorrow,
+    isYesterday,
+    headerLabel,
+    fullWeekday: isFa ? faWeekdays[dayIdx] : enFull[dayIdx],
+    dayNum: formattedDayNum,
+  }
+}
 
 /**
  * Enhanced Habit Tracking System (Phase 1 & Phase 2).
@@ -96,6 +135,8 @@ export function HabitsPage() {
     count: 0,
   })
 
+  const [timeHorizon, setTimeHorizon] = useState<'endOfMonth' | 'week' | 'past'>('endOfMonth')
+
   const habits = useLiveQuery(() => habitRepo.list(workspaceId, true), [workspaceId]) ?? []
   const statsById = useMemo(() => (snapshot ? habitStatsMap(snapshot) : new Map()), [snapshot])
 
@@ -103,10 +144,35 @@ export function HabitsPage() {
   const today = toDayKey(new Date())
 
   const gridDays = useMemo(() => {
-    const out: string[] = []
-    for (let i = 13; i >= 0; i--) out.push(toDayKey(addDays(new Date(), -i)))
-    return out
-  }, [])
+    const now = new Date()
+    if (timeHorizon === 'endOfMonth') {
+      // Days from Today until the end of current month
+      const { end: monthEnd } = monthRange(now)
+      const days = dayKeysBetween(startOfDay(now), monthEnd)
+      // If fewer than 7 days left in the month, keep at least 7 days ahead
+      if (days.length < 7) {
+        const extra = 7 - days.length
+        const lastDay = days.length > 0 ? fromDayKey(days[days.length - 1]) : now
+        for (let i = 1; i <= extra; i++) {
+          days.push(toDayKey(addDays(lastDay, i)))
+        }
+      }
+      return days
+    } else if (timeHorizon === 'week') {
+      const out: string[] = []
+      for (let i = 0; i < 7; i++) {
+        out.push(toDayKey(addDays(now, i)))
+      }
+      return out
+    } else {
+      // Past history: 14 days ending Today
+      const out: string[] = []
+      for (let i = 13; i >= 0; i--) {
+        out.push(toDayKey(addDays(now, -i)))
+      }
+      return out
+    }
+  }, [timeHorizon])
 
   const entries = snapshot?.habitEntries ?? []
   const countFor = (habitId: string, day: string) =>
@@ -326,78 +392,81 @@ export function HabitsPage() {
       ) : null}
 
       {/* ------------------------------------------- Filters & Search Toolbar -- */}
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <SegmentedControl
-          value={view}
-          options={[
-            { value: 'active', label: isFa ? 'فعال' : 'Active' },
-            { value: 'archived', label: isFa ? 'بایگانی' : 'Archived' },
-          ]}
-          onChange={setView}
-        />
+      <div className="mb-4 flex flex-col gap-2.5 lg:flex-row lg:items-center">
+        {/* Right side controls in RTL: Tabs, Filter Chips, Sort */}
+        <div className="flex flex-wrap items-center gap-2">
+          <SegmentedControl
+            value={view}
+            options={[
+              { value: 'active', label: isFa ? 'فعال' : 'Active' },
+              { value: 'archived', label: isFa ? 'بایگانی' : 'Archived' },
+            ]}
+            onChange={setView}
+          />
 
-        {view === 'active' ? (
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Search Input */}
-            <div className="relative min-w-40 sm:min-w-48">
-              <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={isFa ? 'جستجوی عادت…' : 'Search habits…'}
-                className="w-full rounded-lg border border-border bg-card ps-8 pe-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none"
-              />
-              {search ? (
-                <button
-                  type="button"
-                  onClick={() => setSearch('')}
-                  className="absolute end-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
-                >
-                  ✕
-                </button>
-              ) : null}
-            </div>
+          {view === 'active' ? (
+            <>
+              {/* Status Filter Chips */}
+              <div className="flex items-center gap-1 text-xs">
+                {(
+                  [
+                    { id: 'all', label: isFa ? 'همه' : 'All' },
+                    { id: 'due', label: isFa ? 'موعد امروز' : 'Due Today' },
+                    { id: 'done', label: isFa ? 'تکمیل‌شده' : 'Done' },
+                    { id: 'pending', label: isFa ? 'باقی‌مانده' : 'Pending' },
+                  ] as const
+                ).map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setFilter(f.id)}
+                    className={cn(
+                      'rounded-lg px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer',
+                      filter === f.id
+                        ? 'bg-accent/15 text-accent font-semibold'
+                        : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                    )}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
 
-            {/* Status Filter Chips */}
-            <div className="flex items-center gap-1 text-xs">
-              {(
-                [
-                  { id: 'all', label: isFa ? 'همه' : 'All' },
-                  { id: 'due', label: isFa ? 'موعد امروز' : 'Due Today' },
-                  { id: 'done', label: isFa ? 'تکمیل‌شده' : 'Done' },
-                  { id: 'pending', label: isFa ? 'باقی‌مانده' : 'Pending' },
-                ] as const
-              ).map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => setFilter(f.id)}
-                  className={cn(
-                    'rounded-lg px-2.5 py-1 text-xs font-medium transition-colors',
-                    filter === f.id
-                      ? 'bg-accent/15 text-accent font-semibold'
-                      : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
-                  )}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
+              {/* Sort Selector */}
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground outline-none cursor-pointer hover:border-accent hover:text-foreground"
+              >
+                <option value="order">{isFa ? 'ترتیب: پیش‌فرض' : 'Sort: Default'}</option>
+                <option value="streak">{isFa ? 'ترتیب: بیشترین استریک' : 'Sort: Highest Streak'}</option>
+                <option value="consistency">{isFa ? 'ترتیب: بالاترین پایداری' : 'Sort: Consistency'}</option>
+                <option value="title">{isFa ? 'ترتیب: الفبا' : 'Sort: Name'}</option>
+              </select>
+            </>
+          ) : null}
+        </div>
 
-            {/* Sort Selector */}
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-              className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground outline-none cursor-pointer hover:border-accent hover:text-foreground"
+        {/* Search Input: Fills all the remaining space */}
+        <div className="relative flex-1 min-w-44">
+          <Search className="pointer-events-none absolute start-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={isFa ? 'جستجوی عادت…' : 'Search habits…'}
+            className="w-full rounded-lg border border-border bg-card ps-8 pe-8 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none transition-colors"
+          />
+          {search ? (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              className="absolute end-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground p-0.5 cursor-pointer"
             >
-              <option value="order">{isFa ? 'ترتیب: پیش‌فرض' : 'Sort: Default'}</option>
-              <option value="streak">{isFa ? 'ترتیب: بیشترین استریک' : 'Sort: Highest Streak'}</option>
-              <option value="consistency">{isFa ? 'ترتیب: بالاترین پایداری' : 'Sort: Consistency'}</option>
-              <option value="title">{isFa ? 'ترتیب: الفبا' : 'Sort: Name'}</option>
-            </select>
-          </div>
-        ) : null}
+              ✕
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {/* ---------------------------------------------------------- Content -- */}
@@ -579,89 +648,191 @@ export function HabitsPage() {
                 />
 
                 <CardBody>
-                  {/* 14-day Click-to-Log Grid */}
-                  <div
-                    className="grid grid-cols-14 gap-1.5"
-                    style={{ gridTemplateColumns: 'repeat(14, minmax(0, 1fr))' }}
-                  >
+                  {/* Modern Day-by-Day Calendar Grid */}
+                  <div className="overflow-x-auto pb-1.5">
+                    <div
+                      className="inline-grid gap-[14px] justify-items-center min-w-fit"
+                      style={{
+                        gridTemplateColumns: `repeat(${gridDays.length}, minmax(56px, 64px))`,
+                      }}
+                    >
                     {gridDays.map((day) => {
                       const count = countFor(habit.id, day)
                       const due = isHabitDue(habit, fromDayKey(day))
                       const entry = entryFor(habit.id, day)
                       const hasNote = Boolean(entry?.note && entry.note.trim())
+                      const meta = getDayColumnMeta(day, today, isFa)
+                      const done = count >= target
 
                       return (
-                        <button
-                          key={day}
-                          type="button"
-                          title={`${formatDayLabel(day)} — ${count}/${target}${unitLabel}${
-                            due ? '' : isFa ? ' (غیرموعد)' : ' (not due)'
-                          }${hasNote ? `\n📝 ${entry?.note}` : ''}\n${
-                            isFa ? 'دوبار کلیک یا کلیک راست: یادداشت روز' : 'Double click / Right click: Day note'
-                          }`}
-                          onClick={() => void cycle(habit, day)}
-                          onDoubleClick={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            openNote(habit, day)
-                          }}
-                          onContextMenu={(e) => {
-                            e.preventDefault()
-                            openNote(habit, day)
-                          }}
-                          className={cn(
-                            'group relative flex aspect-square items-center justify-center rounded-lg border text-[10px] font-semibold transition-all hover:scale-105',
-                            !due && 'opacity-30',
-                          )}
-                          style={{
-                            backgroundColor: count > 0 ? habit.color : undefined,
-                            opacity: count > 0 ? 0.35 + (count / target) * 0.65 : undefined,
-                            borderColor: count >= target ? habit.color : undefined,
-                          }}
-                        >
-                          <span
-                            className={
-                              count > 0 ? 'text-white drop-shadow font-bold' : 'text-muted-foreground/50'
-                            }
-                          >
-                            {count > 0 ? count : formatDayNumber(day)}
-                          </span>
-
-                          {/* Amber Dot for Attached Notes */}
-                          {hasNote ? (
+                        <div key={day} className="flex flex-col items-center gap-1.5 min-w-0">
+                          {/* Column Header: Full Weekday Name (e.g. چهارشنبه) + 'امروز' badge if today */}
+                          <div className="flex flex-col items-center text-center select-none w-full min-h-10 justify-end pb-0.5">
                             <span
-                              className="absolute top-1 end-1 size-1.5 rounded-full bg-amber-400 ring-1 ring-background"
-                              title={isFa ? 'دارای یادداشت' : 'Has note'}
-                            />
-                          ) : null}
-                        </button>
+                              className={cn(
+                                'text-xs font-semibold tracking-tight transition-colors truncate max-w-full',
+                                meta.isToday
+                                  ? 'text-accent font-bold scale-105'
+                                  : 'text-muted-foreground/90',
+                              )}
+                              title={meta.fullWeekday}
+                            >
+                              {meta.headerLabel}
+                            </span>
+                            {meta.isToday ? (
+                              <span className="mt-0.5 inline-block rounded-full bg-accent/15 px-1.5 py-0.2 text-[9px] font-bold text-accent leading-tight">
+                                {isFa ? 'امروز' : 'Today'}
+                              </span>
+                            ) : (
+                              <span className="mt-0.5 inline-block text-[9px] text-transparent leading-tight select-none">
+                                ·
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Compact Interactive Cell Button */}
+                          <button
+                            type="button"
+                            title={`${formatDayLabel(day)} (${meta.fullWeekday}) — ${count}/${target}${unitLabel}${
+                              due ? '' : isFa ? ' (غیرموعد)' : ' (not due)'
+                            }${hasNote ? `\n📝 ${entry?.note}` : ''}\n${
+                              isFa ? 'کلیک: ثبت/حذف · دوبار کلیک: یادداشت' : 'Click: log/undo · Double-click: note'
+                            }`}
+                            onClick={() => void cycle(habit, day)}
+                            onDoubleClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              openNote(habit, day)
+                            }}
+                            onContextMenu={(e) => {
+                              e.preventDefault()
+                              openNote(habit, day)
+                            }}
+                            className={cn(
+                              'group relative flex size-10 sm:size-11 flex-col items-center justify-center rounded-xl border font-semibold transition-all duration-150 cursor-pointer shrink-0 shadow-2xs',
+                              // Completed
+                              done
+                                ? 'text-white shadow-xs hover:scale-105 hover:brightness-105'
+                                : count > 0
+                                  ? 'text-foreground hover:scale-105'
+                                  : meta.isToday
+                                    ? 'border-accent/60 bg-accent/5 ring-2 ring-accent/25 hover:bg-accent/15 hover:border-accent text-accent'
+                                    : 'border-border/80 bg-card/60 hover:border-border hover:bg-muted/40 text-muted-foreground',
+                              // Not due
+                              !due && !done && 'opacity-35 border-dashed',
+                            )}
+                            style={{
+                              backgroundColor: done ? habit.color : count > 0 ? `${habit.color}2b` : undefined,
+                              borderColor: done ? habit.color : count > 0 ? habit.color : undefined,
+                            }}
+                          >
+                            {/* Inside cell: Date is ALWAYS visible! */}
+                            {done ? (
+                              <div className="flex flex-col items-center justify-center -space-y-0.5">
+                                <Check className="size-3.5 text-white stroke-[3] drop-shadow-xs" />
+                                <span className="text-[11px] font-bold text-white tabular-nums drop-shadow-xs leading-none">
+                                  {meta.dayNum}
+                                </span>
+                              </div>
+                            ) : count > 0 ? (
+                              <div className="flex flex-col items-center justify-center -space-y-0.5">
+                                <span className="text-[10px] font-bold text-accent tabular-nums leading-none">
+                                  {isFa ? toPersianDigits(String(count)) : count}
+                                </span>
+                                <span className="text-[10px] font-semibold text-muted-foreground tabular-nums leading-none">
+                                  {meta.dayNum}
+                                </span>
+                              </div>
+                            ) : (
+                              <span
+                                className={cn(
+                                  'text-xs font-semibold tabular-nums transition-colors',
+                                  meta.isToday
+                                    ? 'text-accent font-bold'
+                                    : 'text-foreground/80 group-hover:text-foreground',
+                                )}
+                              >
+                                {meta.dayNum}
+                              </span>
+                            )}
+
+                            {/* Amber Dot for Attached Notes */}
+                            {hasNote ? (
+                              <span
+                                className="absolute top-1 end-1 size-1.5 rounded-full bg-amber-400 ring-1 ring-background shadow-xs"
+                                title={isFa ? 'دارای یادداشت' : 'Has note'}
+                              />
+                            ) : null}
+                          </button>
+                        </div>
                       )
                     })}
                   </div>
+                </div>
 
-                  {/* Card Sub-footer */}
-                  <div className="mt-2.5 flex flex-wrap items-center justify-between gap-1 text-[11px] text-muted-foreground">
-                    <span className="flex items-center gap-1.5">
-                      <span>{isFa ? '۱۴ روز گذشته' : 'Last 14 days'}</span>
-                      <span className="opacity-40">·</span>
-                      <span className="text-[10px] text-muted-foreground/80">
-                        {isFa
-                          ? 'کلیک: ثبت/حذف · دوبار کلیک: یادداشت'
-                          : 'Click: log/undo · Double-click: note'}
+                {/* Card Sub-footer with horizon controls & tips */}
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/40 pt-2.5 text-[11px] text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-foreground/80 flex items-center gap-1">
+                        <Calendar className="size-3.5 text-accent" />
+                        <span>
+                          {timeHorizon === 'endOfMonth'
+                            ? isFa
+                              ? `روزهای پیش‌رو تا پایان ماه (${toPersianDigits(String(gridDays.length))} روز)`
+                              : `Days until end of month (${gridDays.length}d)`
+                            : timeHorizon === 'week'
+                              ? isFa
+                                ? 'هفته پیش‌رو (۷ روز از امروز)'
+                                : 'Next 7 days (from today)'
+                              : isFa
+                                ? '۱۴ روز گذشته (تاریخچه)'
+                                : 'Last 14 days (history)'}
+                        </span>
                       </span>
-                    </span>
+
+                      <span className="opacity-30">|</span>
+
+                      {/* Horizon Toggle */}
+                      {timeHorizon === 'endOfMonth' ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setTimeHorizon('week')}
+                            className="rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+                          >
+                            {isFa ? 'نمایش فقط ۷ روز' : 'Show 7 days'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTimeHorizon('past')}
+                            className="rounded px-1.5 py-0.5 text-[10px] font-medium text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+                          >
+                            {isFa ? 'مشاهده روزهای گذشته' : 'View past days'}
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setTimeHorizon('endOfMonth')}
+                          className="rounded px-1.5 py-0.5 text-[10px] font-medium text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+                        >
+                          {isFa ? 'بازگشت به روزهای تا پایان ماه' : 'Back to end of month'}
+                        </button>
+                      )}
+                    </div>
+
                     <div className="flex items-center gap-2 tabular-nums">
                       <button
                         type="button"
                         onClick={() => setDetailHabit(habit)}
-                        className="text-accent hover:underline flex items-center gap-1"
+                        className="text-accent hover:underline flex items-center gap-1 cursor-pointer font-medium"
                       >
-                        <BarChart2 className="size-3" />
-                        <span>{isFa ? 'آمار عمیق' : 'Deep Stats'}</span>
+                        <BarChart2 className="size-3.5" />
+                        <span>{isFa ? 'آمار عمیق و تقویم ۳۵ روزه' : 'Deep Stats & 35d Heatmap'}</span>
                       </button>
-                      <span className="opacity-40">·</span>
+                      <span className="opacity-30">·</span>
                       <span>
-                        {stats?.totalCompletions ?? 0} {habit.unit ?? (isFa ? 'کل' : 'total')} ·{' '}
+                        {stats?.totalCompletions ?? 0} {habit.unit ?? (isFa ? 'ثبت' : 'logs')} ·{' '}
                         {stats?.consistency ?? 0}% {isFa ? 'پایداری' : 'consistency'}
                       </span>
                     </div>

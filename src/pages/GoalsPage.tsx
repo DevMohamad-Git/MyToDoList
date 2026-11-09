@@ -1,14 +1,21 @@
 import {
+  ArrowDownLeft,
+  ArrowUpDown,
+  ArrowUpRight,
   Calendar,
   CheckCircle2,
   Circle,
+  History,
   ListChecks,
   MoreHorizontal,
   Pencil,
   Plus,
+  Repeat,
   Search,
   Target,
+  Trash2,
   TrendingUp,
+  Wallet,
   X,
 } from 'lucide-react'
 import { memo, useEffect, useMemo, useState } from 'react'
@@ -41,9 +48,19 @@ import { goalStatusLabel, priorityLabel, useT } from '@/i18n'
 import { goalRepo } from '@/storage/goalRepo'
 import { taskRepo } from '@/storage/taskRepo'
 import { useWorkspaceId } from '@/stores/workspace'
-import { GOAL_STATUSES, PRIORITIES, type Goal, type GoalStatus, type Priority, type Task } from '@/types'
+import {
+  GOAL_STATUSES,
+  PRIORITIES,
+  type FinancialTransaction,
+  type Goal,
+  type GoalStatus,
+  type GoalTargetType,
+  type Habit,
+  type Priority,
+  type Task,
+} from '@/types'
 import { cn } from '@/utils/cn'
-import { formatDate, fromDateInput, toISO } from '@/utils/date'
+import { formatDate, fromDateInput, nowISO, toISO } from '@/utils/date'
 import { newId } from '@/utils/id'
 
 type GoalView = 'active' | 'achieved' | 'all'
@@ -66,10 +83,14 @@ export function GoalsPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null)
   const [tasksModalGoal, setTasksModalGoal] = useState<Goal | null>(null)
+  const [txModalGoal, setTxModalGoal] = useState<Goal | null>(null)
+  const [historyModalGoal, setHistoryModalGoal] = useState<Goal | null>(null)
   const [deleting, setDeleting] = useState<Goal | null>(null)
 
   const projects = data?.projects ?? []
+  const habits = data?.habits ?? []
   const projectsById = data?.projectsById ?? new Map()
+  const habitsById = data?.habitsById ?? new Map()
   const statsById = data?.statsById ?? new Map()
   const tasksByGoalId = data?.tasksByGoalId ?? new Map()
   const portfolioSummary = data?.portfolioSummary
@@ -293,9 +314,12 @@ export function GoalsPage() {
                 goal={goal}
                 stats={stats}
                 projectsById={projectsById}
+                habitsById={habitsById}
                 onEdit={() => setEditingGoal(goal)}
                 onDelete={() => setDeleting(goal)}
                 onOpenTasks={() => setTasksModalGoal(goal)}
+                onOpenTransaction={() => setTxModalGoal(goal)}
+                onOpenHistory={() => setHistoryModalGoal(goal)}
               />
             )
           })}
@@ -307,6 +331,7 @@ export function GoalsPage() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+        habits={habits.map((h) => ({ id: h.id, title: h.title, color: h.color }))}
       />
 
       <EditGoalModal
@@ -314,6 +339,7 @@ export function GoalsPage() {
         open={editingGoal != null}
         onClose={() => setEditingGoal(null)}
         projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+        habits={habits.map((h) => ({ id: h.id, title: h.title, color: h.color }))}
       />
 
       <GoalTasksModal
@@ -322,6 +348,18 @@ export function GoalsPage() {
         allWorkspaceTasks={data?.tasks ?? []}
         open={tasksModalGoal != null}
         onClose={() => setTasksModalGoal(null)}
+      />
+
+      <GoalTransactionModal
+        goal={txModalGoal}
+        open={txModalGoal != null}
+        onClose={() => setTxModalGoal(null)}
+      />
+
+      <GoalHistoryModal
+        goal={historyModalGoal}
+        open={historyModalGoal != null}
+        onClose={() => setHistoryModalGoal(null)}
       />
 
       <ConfirmDialog
@@ -349,20 +387,29 @@ interface GoalCardProps {
   goal: Goal
   stats?: ReturnType<typeof import('@/services/progress').goalStats>
   projectsById: Map<string, import('@/types').Project>
+  habitsById: Map<string, Habit>
   onEdit: () => void
   onDelete: () => void
   onOpenTasks: () => void
+  onOpenTransaction: () => void
+  onOpenHistory: () => void
 }
 
 const GoalCard = memo(function GoalCard({
   goal,
   stats,
   projectsById,
+  habitsById,
   onEdit,
   onDelete,
   onOpenTasks,
+  onOpenTransaction,
+  onOpenHistory,
 }: GoalCardProps) {
   const t = useT()
+
+  const isFinancialOrMetric = goal.targetType === 'financial' || goal.targetType === 'metric'
+  const unit = goal.unit || (goal.targetType === 'financial' ? 'تومان' : '')
 
   return (
     <Card className="flex flex-col justify-between transition-shadow hover:shadow-md">
@@ -381,6 +428,24 @@ const GoalCard = memo(function GoalCard({
             ) : null}
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <Badge>{priorityLabel(goal.priority)}</Badge>
+              {goal.targetType && goal.targetType !== 'standard' ? (
+                <Badge
+                  className={cn(
+                    goal.targetType === 'financial' && 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+                    goal.targetType === 'metric' && 'border-amber-500/30 bg-amber-500/10 text-amber-400',
+                    goal.targetType === 'habit' && 'border-purple-500/30 bg-purple-500/10 text-purple-400',
+                  )}
+                >
+                  {goal.targetType === 'financial' && <Wallet className="me-1 inline size-3" />}
+                  {goal.targetType === 'metric' && <TrendingUp className="me-1 inline size-3" />}
+                  {goal.targetType === 'habit' && <Repeat className="me-1 inline size-3" />}
+                  {goal.targetType === 'financial'
+                    ? t('goalsTypeFinancial')
+                    : goal.targetType === 'metric'
+                      ? t('goalsTypeMetric')
+                      : t('goalsTypeHabit')}
+                </Badge>
+              ) : null}
               {goal.status !== 'active' ? (
                 <Badge>{goalStatusLabel(goal.status)}</Badge>
               ) : null}
@@ -412,6 +477,43 @@ const GoalCard = memo(function GoalCard({
           </div>
           <ProgressBar value={stats?.progress ?? 0} color={goal.color} />
 
+          {/* Financial / Metric Dedicated Tracker Box */}
+          {isFinancialOrMetric && (
+            <div className="mt-3 rounded-lg border border-border/80 bg-muted/20 p-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5 font-medium text-foreground">
+                  <Wallet className="size-3.5 text-accent" />
+                  <span>{goal.targetType === 'financial' ? 'هدف مالی و پس‌انداز' : 'پیشرفت عددی'}</span>
+                </span>
+                <span className="font-mono font-semibold text-accent tabular-nums">
+                  {(goal.currentAmount ?? 0).toLocaleString()} / {(goal.targetAmount ?? 0).toLocaleString()} {unit}
+                </span>
+              </div>
+              <div className="mt-2.5 flex items-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 flex-1 gap-1 text-[11px]"
+                  onClick={onOpenTransaction}
+                >
+                  <ArrowUpDown className="size-3 text-emerald-500" />
+                  <span>واریز / برداشت</span>
+                </Button>
+                {(goal.financialTransactions?.length ?? 0) > 0 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+                    onClick={onOpenHistory}
+                  >
+                    <History className="size-3" />
+                    <span>{goal.financialTransactions?.length} تراکنش</span>
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* 3-Column Metrics with Interactive Tasks Box */}
           <div className="mt-3.5 grid grid-cols-3 gap-2 text-center text-xs">
             <div className="rounded-lg bg-muted/30 p-1.5">
@@ -441,6 +543,29 @@ const GoalCard = memo(function GoalCard({
             </div>
           </div>
 
+          {/* Linked Habits Pills */}
+          {(goal.linkedHabitIds?.length ?? 0) > 0 ? (
+            <div className="mt-3">
+              <div className="mb-1 text-[10px] font-medium text-muted-foreground">{t('goalsFieldLinkedHabits')}:</div>
+              <div className="flex flex-wrap gap-1.5">
+                {goal.linkedHabitIds!.map((hid) => {
+                  const habit = habitsById.get(hid)
+                  if (!habit) return null
+                  return (
+                    <Badge
+                      key={hid}
+                      className="border-transparent text-[11px] gap-1"
+                      style={{ backgroundColor: `${habit.color}20`, color: habit.color }}
+                    >
+                      <Repeat className="size-3" />
+                      <span>{habit.title}</span>
+                    </Badge>
+                  )
+                })}
+              </div>
+            </div>
+          ) : null}
+
           {/* Projects Pills */}
           {goal.linkedProjectIds.length > 0 ? (
             <div className="mt-3 flex flex-wrap gap-1.5">
@@ -460,9 +585,14 @@ const GoalCard = memo(function GoalCard({
             </div>
           ) : null}
 
+          {/* Goal-Specific Milestones / Actions heading */}
+          <div className="mt-3.5 mb-1 text-[10px] font-medium text-muted-foreground">
+            {t('goalsMilestonesHeading')}
+          </div>
+
           {/* Milestones list with optional due dates */}
           {goal.milestones.length > 0 ? (
-            <div className="mt-3 divide-y divide-border rounded-lg border border-border">
+            <div className="mt-1 divide-y divide-border rounded-lg border border-border">
               {goal.milestones.map((milestone) => (
                 <div key={milestone.id} className="flex items-center gap-2 px-2.5 py-1.5">
                   <button
@@ -655,39 +785,77 @@ export function CreateGoalModal({
   open,
   onClose,
   projects,
+  habits = [],
 }: {
   open: boolean
   onClose: () => void
   projects: { id: string; name: string }[]
+  habits?: { id: string; title: string; color: string }[]
 }) {
   const t = useT()
   const workspaceId = useWorkspaceId()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [targetType, setTargetType] = useState<GoalTargetType>('standard')
+  const [targetAmount, setTargetAmount] = useState('')
+  const [currentAmount, setCurrentAmount] = useState('')
+  const [unit, setUnit] = useState('تومان')
   const [priority, setPriority] = useState<Priority>('high')
   const [deadline, setDeadline] = useState('')
   const [color, setColor] = useState(ENTITY_COLORS[1])
-  const [linked, setLinked] = useState<string[]>([])
+  const [linkedProjects, setLinkedProjects] = useState<string[]>([])
+  const [linkedHabits, setLinkedHabits] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
+
+  const isFinancial = targetType === 'financial'
+  const isMetric = targetType === 'metric'
+  const isAmountBased = isFinancial || isMetric
 
   async function submit() {
     if (!title.trim()) return
     setBusy(true)
     try {
+      const parsedTarget = isAmountBased && targetAmount ? Number(targetAmount.replace(/,/g, '')) : null
+      const parsedCurrent = isAmountBased && currentAmount ? Number(currentAmount.replace(/,/g, '')) : 0
+      const initialTransactions: FinancialTransaction[] = []
+      if (isFinancial && parsedCurrent > 0) {
+        initialTransactions.push({
+          id: newId(),
+          type: 'deposit',
+          amount: parsedCurrent,
+          date: nowISO(),
+          note: 'موجودی اولیه',
+        })
+      }
+
       const goal = await goalRepo.create(workspaceId, {
         title: title.trim(),
         description: description.trim(),
         priority,
         color,
         deadline: deadline ? fromDateInput(deadline) : null,
-        linkedProjectIds: linked,
+        targetType,
+        targetAmount: parsedTarget,
+        currentAmount: parsedCurrent,
+        unit: isAmountBased ? unit.trim() || (isFinancial ? 'تومان' : '') : undefined,
+        financialTransactions: initialTransactions,
+        linkedProjectIds: linkedProjects,
+        linkedHabitIds: linkedHabits,
       })
-      for (const projectId of linked) await goalRepo.linkProject(goal.id, projectId)
+
+      for (const projectId of linkedProjects) await goalRepo.linkProject(goal.id, projectId)
+      for (const habitId of linkedHabits) await goalRepo.linkHabit(goal.id, habitId)
+
       toast.success(t('goalsToastCreated'))
       setTitle('')
       setDescription('')
+      setTargetType('standard')
+      setTargetAmount('')
+      setCurrentAmount('')
+      setUnit('تومان')
       setDeadline('')
-      setLinked([])
+      setLinkedProjects([])
+      setLinkedHabits([])
       onClose()
     } catch (error) {
       toast.error((error as Error).message || t('goalsToastCreateError'))
@@ -718,10 +886,11 @@ export function CreateGoalModal({
             id="ng-title"
             autoFocus
             value={title}
-            placeholder={t('goalsFieldTitlePlaceholder')}
+            placeholder={isFinancial ? 'مثلاً: جمع کردن ۵۰ میلیون تومان در ۳ ماه' : t('goalsFieldTitlePlaceholder')}
             onChange={(e) => setTitle(e.target.value)}
           />
         </Field>
+
         <Field label={t('goalsFieldDescription')} htmlFor="ng-desc">
           <Textarea
             id="ng-desc"
@@ -730,6 +899,117 @@ export function CreateGoalModal({
             onChange={(e) => setDescription(e.target.value)}
           />
         </Field>
+
+        {/* Goal Type Selector */}
+        <Field label={t('goalsFieldType')}>
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            <button
+              type="button"
+              onClick={() => {
+                setTargetType('standard')
+              }}
+              className={cn(
+                'flex flex-col items-center justify-center gap-1 rounded-lg border p-2 text-center text-xs transition-colors',
+                targetType === 'standard'
+                  ? 'border-accent bg-accent/10 font-semibold text-accent'
+                  : 'border-border text-muted-foreground hover:bg-muted/30',
+              )}
+            >
+              <Target className="size-3.5" />
+              <span>{t('goalsTypeStandard')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTargetType('financial')
+                if (!unit) setUnit('تومان')
+              }}
+              className={cn(
+                'flex flex-col items-center justify-center gap-1 rounded-lg border p-2 text-center text-xs transition-colors',
+                targetType === 'financial'
+                  ? 'border-emerald-500 bg-emerald-500/10 font-semibold text-emerald-400'
+                  : 'border-border text-muted-foreground hover:bg-muted/30',
+              )}
+            >
+              <Wallet className="size-3.5" />
+              <span>{t('goalsTypeFinancial')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTargetType('metric')
+                if (unit === 'تومان') setUnit('')
+              }}
+              className={cn(
+                'flex flex-col items-center justify-center gap-1 rounded-lg border p-2 text-center text-xs transition-colors',
+                targetType === 'metric'
+                  ? 'border-amber-500 bg-amber-500/10 font-semibold text-amber-400'
+                  : 'border-border text-muted-foreground hover:bg-muted/30',
+              )}
+            >
+              <TrendingUp className="size-3.5" />
+              <span>{t('goalsTypeMetric')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTargetType('habit')
+              }}
+              className={cn(
+                'flex flex-col items-center justify-center gap-1 rounded-lg border p-2 text-center text-xs transition-colors',
+                targetType === 'habit'
+                  ? 'border-purple-500 bg-purple-500/10 font-semibold text-purple-400'
+                  : 'border-border text-muted-foreground hover:bg-muted/30',
+              )}
+            >
+              <Repeat className="size-3.5" />
+              <span>{t('goalsTypeHabit')}</span>
+            </button>
+          </div>
+        </Field>
+
+        {/* Financial / Numeric Specific Inputs */}
+        {isAmountBased && (
+          <div className="grid gap-3 rounded-lg border border-border/80 bg-muted/20 p-3 sm:grid-cols-3">
+            <Field label={t('goalsFieldTargetAmount')} required>
+              <Input
+                type="text"
+                dir="ltr"
+                value={targetAmount}
+                placeholder={isFinancial ? '۵۰,۰۰۰,۰۰۰' : '۱۰۰'}
+                className="h-8 font-mono text-xs tabular-nums"
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/[^0-9]/g, '')
+                  setTargetAmount(raw ? Number(raw).toLocaleString() : '')
+                }}
+              />
+            </Field>
+
+            <Field label={t('goalsFieldCurrentAmount')}>
+              <Input
+                type="text"
+                dir="ltr"
+                value={currentAmount}
+                placeholder="۰"
+                className="h-8 font-mono text-xs tabular-nums"
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/[^0-9]/g, '')
+                  setCurrentAmount(raw ? Number(raw).toLocaleString() : '')
+                }}
+              />
+            </Field>
+
+            <Field label={t('goalsFieldUnit')}>
+              <Input
+                value={unit}
+                placeholder={isFinancial ? 'تومان' : 'کیلوگرم، صفحه...'}
+                className="h-8 text-xs"
+                onChange={(e) => setUnit(e.target.value)}
+              />
+            </Field>
+          </div>
+        )}
+
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label={t('goalsFieldPriority')}>
             <OptionSelect
@@ -742,24 +1022,57 @@ export function CreateGoalModal({
             <JalaliDatePicker value={deadline} onChange={(v) => setDeadline(v)} />
           </Field>
         </div>
+
+        {/* Linked Habits Chips */}
+        <Field label={t('goalsFieldLinkedHabits')} hint={t('goalsFieldLinkedHabitsHint')}>
+          {habits.length === 0 ? (
+            <p className="text-xs text-muted-foreground">{t('goalsNoHabits')}</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {habits.map((h) => {
+                const selected = linkedHabits.includes(h.id)
+                return (
+                  <button
+                    key={h.id}
+                    type="button"
+                    onClick={() =>
+                      setLinkedHabits((cur) => (selected ? cur.filter((x) => x !== h.id) : [...cur, h.id]))
+                    }
+                    className={cn(
+                      'flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors',
+                      selected
+                        ? 'border-purple-500 bg-purple-500/10 text-purple-400 font-medium'
+                        : 'border-border text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    <Repeat className="size-3" />
+                    <span>{h.title}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </Field>
+
+        {/* Linked Projects Chips (Optional) */}
         <Field label={t('goalsFieldLinkedProjects')} hint={t('goalsFieldLinkedProjectsHint')}>
           {projects.length === 0 ? (
             <p className="text-xs text-muted-foreground">{t('goalsNoProjects')}</p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {projects.map((p) => {
-                const selected = linked.includes(p.id)
+                const selected = linkedProjects.includes(p.id)
                 return (
                   <button
                     key={p.id}
                     type="button"
                     onClick={() =>
-                      setLinked((cur) => (selected ? cur.filter((x) => x !== p.id) : [...cur, p.id]))
+                      setLinkedProjects((cur) => (selected ? cur.filter((x) => x !== p.id) : [...cur, p.id]))
                     }
                     className={cn(
                       'rounded-md border px-2 py-1 text-xs transition-colors',
                       selected
-                        ? 'border-accent bg-accent/10 text-accent'
+                        ? 'border-accent bg-accent/10 text-accent font-medium'
                         : 'border-border text-muted-foreground hover:text-foreground',
                     )}
                   >
@@ -770,6 +1083,7 @@ export function CreateGoalModal({
             </div>
           )}
         </Field>
+
         <Field label={t('goalsFieldColor')}>
           <div className="flex flex-wrap gap-1.5">
             {ENTITY_COLORS.map((c) => (
@@ -801,33 +1115,49 @@ function EditGoalModal({
   open,
   onClose,
   projects,
+  habits,
 }: {
   goal: Goal | null
   open: boolean
   onClose: () => void
   projects: { id: string; name: string }[]
+  habits: { id: string; title: string; color: string }[]
 }) {
   const t = useT()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [targetType, setTargetType] = useState<GoalTargetType>('standard')
+  const [targetAmount, setTargetAmount] = useState('')
+  const [currentAmount, setCurrentAmount] = useState('')
+  const [unit, setUnit] = useState('تومان')
   const [status, setStatus] = useState<GoalStatus>('active')
   const [priority, setPriority] = useState<Priority>('high')
   const [deadline, setDeadline] = useState('')
   const [color, setColor] = useState(ENTITY_COLORS[1])
-  const [linked, setLinked] = useState<string[]>([])
+  const [linkedProjects, setLinkedProjects] = useState<string[]>([])
+  const [linkedHabits, setLinkedHabits] = useState<string[]>([])
   const [manualProgress, setManualProgress] = useState<string>('')
   const [busy, setBusy] = useState(false)
+
+  const isFinancial = targetType === 'financial'
+  const isMetric = targetType === 'metric'
+  const isAmountBased = isFinancial || isMetric
 
   // Sync state whenever goal changes
   useEffect(() => {
     if (goal) {
       setTitle(goal.title)
       setDescription(goal.description ?? '')
+      setTargetType(goal.targetType || 'standard')
+      setTargetAmount(goal.targetAmount != null ? Number(goal.targetAmount).toLocaleString() : '')
+      setCurrentAmount(goal.currentAmount != null ? Number(goal.currentAmount).toLocaleString() : '')
+      setUnit(goal.unit || 'تومان')
       setStatus(goal.status)
       setPriority(goal.priority)
       setDeadline(goal.deadline ? toISO(new Date(goal.deadline)) : '')
       setColor(goal.color)
-      setLinked(goal.linkedProjectIds ?? [])
+      setLinkedProjects(goal.linkedProjectIds ?? [])
+      setLinkedHabits(goal.linkedHabitIds ?? [])
       setManualProgress(goal.manualProgress != null ? String(goal.manualProgress) : '')
     }
   }, [goal])
@@ -840,6 +1170,9 @@ function EditGoalModal({
     try {
       const parsedManual =
         manualProgress.trim() === '' ? null : Math.max(0, Math.min(100, Number(manualProgress)))
+      const parsedTarget = isAmountBased && targetAmount ? Number(targetAmount.replace(/,/g, '')) : null
+      const parsedCurrent = isAmountBased && currentAmount ? Number(currentAmount.replace(/,/g, '')) : 0
+
       await goalRepo.update(goal.id, {
         title: title.trim(),
         description: description.trim(),
@@ -847,7 +1180,12 @@ function EditGoalModal({
         priority,
         color,
         deadline: deadline ? fromDateInput(deadline) : null,
-        linkedProjectIds: linked,
+        targetType,
+        targetAmount: parsedTarget,
+        currentAmount: parsedCurrent,
+        unit: isAmountBased ? unit.trim() || (isFinancial ? 'تومان' : '') : undefined,
+        linkedProjectIds: linkedProjects,
+        linkedHabitIds: linkedHabits,
         manualProgress: Number.isFinite(parsedManual) ? parsedManual : null,
       })
       toast.success(t('goalsToastUpdated'))
@@ -891,6 +1229,113 @@ function EditGoalModal({
             onChange={(e) => setDescription(e.target.value)}
           />
         </Field>
+
+        {/* Goal Type Selector */}
+        <Field label={t('goalsFieldType')}>
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            <button
+              type="button"
+              onClick={() => setTargetType('standard')}
+              className={cn(
+                'flex flex-col items-center justify-center gap-1 rounded-lg border p-2 text-center text-xs transition-colors',
+                targetType === 'standard'
+                  ? 'border-accent bg-accent/10 font-semibold text-accent'
+                  : 'border-border text-muted-foreground hover:bg-muted/30',
+              )}
+            >
+              <Target className="size-3.5" />
+              <span>{t('goalsTypeStandard')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTargetType('financial')
+                if (!unit) setUnit('تومان')
+              }}
+              className={cn(
+                'flex flex-col items-center justify-center gap-1 rounded-lg border p-2 text-center text-xs transition-colors',
+                targetType === 'financial'
+                  ? 'border-emerald-500 bg-emerald-500/10 font-semibold text-emerald-400'
+                  : 'border-border text-muted-foreground hover:bg-muted/30',
+              )}
+            >
+              <Wallet className="size-3.5" />
+              <span>{t('goalsTypeFinancial')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTargetType('metric')
+                if (unit === 'تومان') setUnit('')
+              }}
+              className={cn(
+                'flex flex-col items-center justify-center gap-1 rounded-lg border p-2 text-center text-xs transition-colors',
+                targetType === 'metric'
+                  ? 'border-amber-500 bg-amber-500/10 font-semibold text-amber-400'
+                  : 'border-border text-muted-foreground hover:bg-muted/30',
+              )}
+            >
+              <TrendingUp className="size-3.5" />
+              <span>{t('goalsTypeMetric')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTargetType('habit')}
+              className={cn(
+                'flex flex-col items-center justify-center gap-1 rounded-lg border p-2 text-center text-xs transition-colors',
+                targetType === 'habit'
+                  ? 'border-purple-500 bg-purple-500/10 font-semibold text-purple-400'
+                  : 'border-border text-muted-foreground hover:bg-muted/30',
+              )}
+            >
+              <Repeat className="size-3.5" />
+              <span>{t('goalsTypeHabit')}</span>
+            </button>
+          </div>
+        </Field>
+
+        {/* Financial / Numeric Specific Inputs */}
+        {isAmountBased && (
+          <div className="grid gap-3 rounded-lg border border-border/80 bg-muted/20 p-3 sm:grid-cols-3">
+            <Field label={t('goalsFieldTargetAmount')} required>
+              <Input
+                type="text"
+                dir="ltr"
+                value={targetAmount}
+                placeholder={isFinancial ? '۵۰,۰۰۰,۰۰۰' : '۱۰۰'}
+                className="h-8 font-mono text-xs tabular-nums"
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/[^0-9]/g, '')
+                  setTargetAmount(raw ? Number(raw).toLocaleString() : '')
+                }}
+              />
+            </Field>
+
+            <Field label={t('goalsFieldCurrentAmount')}>
+              <Input
+                type="text"
+                dir="ltr"
+                value={currentAmount}
+                placeholder="۰"
+                className="h-8 font-mono text-xs tabular-nums"
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/[^0-9]/g, '')
+                  setCurrentAmount(raw ? Number(raw).toLocaleString() : '')
+                }}
+              />
+            </Field>
+
+            <Field label={t('goalsFieldUnit')}>
+              <Input
+                value={unit}
+                placeholder={isFinancial ? 'تومان' : 'کیلوگرم، صفحه...'}
+                className="h-8 text-xs"
+                onChange={(e) => setUnit(e.target.value)}
+              />
+            </Field>
+          </div>
+        )}
+
         <div className="grid gap-3 sm:grid-cols-3">
           <Field label={t('goalsFieldStatus')}>
             <Select
@@ -944,19 +1389,51 @@ function EditGoalModal({
           </div>
         </Field>
 
+        {/* Linked Habits Chips */}
+        <Field label={t('goalsFieldLinkedHabits')} hint={t('goalsFieldLinkedHabitsHint')}>
+          {habits.length === 0 ? (
+            <p className="text-xs text-muted-foreground">{t('goalsNoHabits')}</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {habits.map((h) => {
+                const selected = linkedHabits.includes(h.id)
+                return (
+                  <button
+                    key={h.id}
+                    type="button"
+                    onClick={() =>
+                      setLinkedHabits((cur) => (selected ? cur.filter((x) => x !== h.id) : [...cur, h.id]))
+                    }
+                    className={cn(
+                      'flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors',
+                      selected
+                        ? 'border-purple-500 bg-purple-500/10 text-purple-400 font-medium'
+                        : 'border-border text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    <Repeat className="size-3" />
+                    <span>{h.title}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </Field>
+
+        {/* Linked Projects Chips (Optional) */}
         <Field label={t('goalsFieldLinkedProjects')} hint={t('goalsFieldLinkedProjectsHint')}>
           {projects.length === 0 ? (
             <p className="text-xs text-muted-foreground">{t('goalsNoProjects')}</p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {projects.map((p) => {
-                const selected = linked.includes(p.id)
+                const selected = linkedProjects.includes(p.id)
                 return (
                   <button
                     key={p.id}
                     type="button"
                     onClick={() =>
-                      setLinked((cur) => (selected ? cur.filter((x) => x !== p.id) : [...cur, p.id]))
+                      setLinkedProjects((cur) => (selected ? cur.filter((x) => x !== p.id) : [...cur, p.id]))
                     }
                     className={cn(
                       'rounded-md border px-2 py-1 text-xs transition-colors',
@@ -1170,6 +1647,273 @@ function GoalTasksModal({
                 >
                   <X className="size-3" />
                 </IconButton>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/* Goal Financial Transaction Modal (Deposit & Withdrawal)                    */
+/* -------------------------------------------------------------------------- */
+
+function GoalTransactionModal({
+  goal,
+  open,
+  onClose,
+}: {
+  goal: Goal | null
+  open: boolean
+  onClose: () => void
+}) {
+  const t = useT()
+  const [type, setType] = useState<'deposit' | 'withdrawal'>('deposit')
+  const [amount, setAmount] = useState('')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  if (!goal) return null
+
+  const unit = goal.unit || 'تومان'
+  const current = goal.currentAmount ?? 0
+
+  async function handleSubmit() {
+    const cleanNum = Number(amount.replace(/,/g, ''))
+    if (!cleanNum || cleanNum <= 0) {
+      toast.error('لطفاً مبلغ معتبری وارد کنید.')
+      return
+    }
+    setBusy(true)
+    try {
+      await goalRepo.addTransaction(goal!.id, {
+        type,
+        amount: cleanNum,
+        note: note.trim(),
+      })
+      toast.success(
+        type === 'deposit'
+          ? `واریز ${cleanNum.toLocaleString()} ${unit} با موفقیت ثبت شد.`
+          : `برداشت ${cleanNum.toLocaleString()} ${unit} با موفقیت ثبت شد.`,
+      )
+      setAmount('')
+      setNote('')
+      onClose()
+    } catch (err) {
+      toast.error((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const quickAmounts = [1_000_000, 5_000_000, 10_000_000, 25_000_000, 50_000_000]
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={t('goalsTransactionModalTitle', { title: goal.title })}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            {t('cCancel')}
+          </Button>
+          <Button
+            variant={type === 'deposit' ? 'primary' : 'danger'}
+            onClick={() => void handleSubmit()}
+            disabled={busy || !amount}
+          >
+            {type === 'deposit' ? t('goalsDepositAction') : t('goalsWithdrawalAction')}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {/* Current status chip */}
+        <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3 text-xs">
+          <span className="text-muted-foreground">{t('goalsFieldCurrentAmount')}:</span>
+          <span className="font-mono font-semibold text-foreground">
+            {current.toLocaleString()} {unit}
+          </span>
+        </div>
+
+        {/* Deposit / Withdrawal segmented control */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setType('deposit')}
+            className={cn(
+              'flex items-center justify-center gap-1.5 rounded-lg border p-2.5 text-xs font-semibold transition-all',
+              type === 'deposit'
+                ? 'border-emerald-500 bg-emerald-500/10 text-emerald-500 shadow-sm'
+                : 'border-border text-muted-foreground hover:bg-muted/40',
+            )}
+          >
+            <ArrowDownLeft className="size-4" />
+            <span>{t('goalsDeposit')}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setType('withdrawal')}
+            className={cn(
+              'flex items-center justify-center gap-1.5 rounded-lg border p-2.5 text-xs font-semibold transition-all',
+              type === 'withdrawal'
+                ? 'border-rose-500 bg-rose-500/10 text-rose-500 shadow-sm'
+                : 'border-border text-muted-foreground hover:bg-muted/40',
+            )}
+          >
+            <ArrowUpRight className="size-4" />
+            <span>{t('goalsWithdrawal')}</span>
+          </button>
+        </div>
+
+        {/* Amount Input */}
+        <Field label={`${t('goalsTransactionAmount')} (${unit})`} required>
+          <Input
+            autoFocus
+            type="text"
+            dir="ltr"
+            value={amount}
+            onChange={(e) => {
+              const raw = e.target.value.replace(/[^0-9]/g, '')
+              setAmount(raw ? Number(raw).toLocaleString() : '')
+            }}
+            placeholder="مثلاً: ۳۰,۰۰۰,۰۰۰"
+            className="h-9 font-mono text-sm font-semibold tabular-nums"
+          />
+        </Field>
+
+        {/* Quick Amount Buttons */}
+        <div className="flex flex-wrap gap-1.5">
+          {quickAmounts.map((q) => (
+            <button
+              key={q}
+              type="button"
+              onClick={() => setAmount(q.toLocaleString())}
+              className="rounded-md border border-border bg-muted/30 px-2 py-1 text-[11px] font-mono text-muted-foreground hover:border-accent hover:text-foreground"
+            >
+              +{(q / 1_000_000).toLocaleString()} میلیون
+            </button>
+          ))}
+        </div>
+
+        {/* Note Input */}
+        <Field label={t('goalsTransactionNote')}>
+          <Input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="مثلاً: حقوق ماهانه، پس‌انداز، برداشت اضطراری..."
+            className="text-xs"
+          />
+        </Field>
+      </div>
+    </Modal>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/* Goal Financial History Modal                                               */
+/* -------------------------------------------------------------------------- */
+
+function GoalHistoryModal({
+  goal,
+  open,
+  onClose,
+}: {
+  goal: Goal | null
+  open: boolean
+  onClose: () => void
+}) {
+  const t = useT()
+  if (!goal) return null
+
+  const txs = [...(goal.financialTransactions ?? [])].reverse()
+  const unit = goal.unit || 'تومان'
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={t('goalsTransactionHistory')}
+      footer={
+        <Button variant="secondary" onClick={onClose}>
+          {t('cClose')}
+        </Button>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>
+            هدف: <strong className="text-foreground">{goal.title}</strong>
+          </span>
+          <span>
+            موجودی فعلی:{' '}
+            <strong className="font-mono text-accent">
+              {(goal.currentAmount ?? 0).toLocaleString()} {unit}
+            </strong>
+          </span>
+        </div>
+
+        {txs.length === 0 ? (
+          <p className="py-6 text-center text-xs text-muted-foreground">
+            {t('goalsNoTransactions')}
+          </p>
+        ) : (
+          <div className="max-h-80 divide-y divide-border overflow-y-auto rounded-lg border border-border">
+            {txs.map((tx) => (
+              <div key={tx.id} className="flex items-center justify-between p-2.5 text-xs">
+                <div className="flex items-center gap-2">
+                  <div
+                    className={cn(
+                      'flex size-6 items-center justify-center rounded-full',
+                      tx.type === 'deposit'
+                        ? 'bg-emerald-500/10 text-emerald-500'
+                        : 'bg-rose-500/10 text-rose-500',
+                    )}
+                  >
+                    {tx.type === 'deposit' ? (
+                      <ArrowDownLeft className="size-3.5" />
+                    ) : (
+                      <ArrowUpRight className="size-3.5" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="font-semibold text-foreground">
+                      {tx.type === 'deposit' ? 'واریز' : 'برداشت'}
+                      {tx.note ? (
+                        <span className="ms-1 font-normal text-muted-foreground">
+                          — {tx.note}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {formatDate(tx.date)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      'font-mono font-semibold tabular-nums',
+                      tx.type === 'deposit' ? 'text-emerald-500' : 'text-rose-500',
+                    )}
+                  >
+                    {tx.type === 'deposit' ? '+' : '-'}
+                    {tx.amount.toLocaleString()} {unit}
+                  </span>
+                  <IconButton
+                    label={t('goalsTransactionDelete')}
+                    onClick={async () => {
+                      await goalRepo.deleteTransaction(goal.id, tx.id)
+                      toast.success('تراکنش حذف شد و موجودی به‌روزرسانی گردید.')
+                    }}
+                  >
+                    <Trash2 className="size-3 text-muted-foreground hover:text-rose-400" />
+                  </IconButton>
+                </div>
               </div>
             ))}
           </div>

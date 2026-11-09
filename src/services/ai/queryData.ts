@@ -57,6 +57,16 @@ export interface WorkspaceDataSummary {
     deadlineJalali: string | null
     tags: string[]
   }>
+  goals: Array<{
+    id: ID
+    title: string
+    status: string
+    targetType?: string
+    targetAmount?: number | null
+    currentAmount?: number | null
+    unit?: string
+    deadlineJalali: string | null
+  }>
   existingTags: string[]
 }
 
@@ -71,12 +81,13 @@ export async function queryWorkspaceData(workspaceId: ID): Promise<WorkspaceData
   const todayGregorian = todayDayKey
 
   // Fetch all entities for this workspace
-  const [tasks, projects, focusSessions, habits, habitEntries] = await Promise.all([
+  const [tasks, projects, focusSessions, habits, habitEntries, goals] = await Promise.all([
     db.tasks.where('workspaceId').equals(workspaceId).toArray(),
     db.projects.where('workspaceId').equals(workspaceId).toArray(),
     db.focusSessions.where('workspaceId').equals(workspaceId).toArray(),
     db.habits.where('workspaceId').equals(workspaceId).toArray(),
     db.habitEntries.where('workspaceId').equals(workspaceId).toArray(),
+    db.goals.where('workspaceId').equals(workspaceId).toArray(),
   ])
 
   const projectMap = new Map<ID, string>()
@@ -222,6 +233,16 @@ export async function queryWorkspaceData(workspaceId: ID): Promise<WorkspaceData
       habitsToday,
     },
     projects: projectsList,
+    goals: goals.map((g) => ({
+      id: g.id,
+      title: g.title,
+      status: g.status,
+      targetType: g.targetType,
+      targetAmount: g.targetAmount,
+      currentAmount: g.currentAmount,
+      unit: g.unit,
+      deadlineJalali: g.deadline ? formatJalali(new Date(g.deadline)) : null,
+    })),
     existingTags: Array.from(existingTagsSet),
   }
 }

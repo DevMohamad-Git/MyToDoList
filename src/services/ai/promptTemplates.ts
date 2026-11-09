@@ -16,6 +16,18 @@ export function buildSystemPrompt(
     .map((p) => `- ${p.name} (شناسه: ${p.id}, وضعیت: ${p.status})`)
     .join('\n')
 
+  const existingGoalsStr = (workspaceData.goals || [])
+    .map((g) => {
+      const typeStr =
+        g.targetType === 'financial'
+          ? `مالی، هدف: ${(g.targetAmount ?? 0).toLocaleString()} ${g.unit || 'تومان'}، موجودی فعلی: ${(g.currentAmount ?? 0).toLocaleString()} ${g.unit || 'تومان'}`
+          : g.targetType === 'metric'
+            ? `مقداری/عددی، هدف: ${(g.targetAmount ?? 0).toLocaleString()} ${g.unit || ''}، مقدار فعلی: ${(g.currentAmount ?? 0).toLocaleString()} ${g.unit || ''}`
+            : g.targetType || 'استاندارد'
+      return `- ${g.title} (شناسه: ${g.id}، وضعیت: ${g.status}، نوع: ${typeStr})`
+    })
+    .join('\n')
+
   const existingTagsStr = workspaceData.existingTags.join('، ')
 
   const webResultsStr =
@@ -25,7 +37,7 @@ ${webResults.map((r, i) => `[${i + 1}] عنوان: ${r.title}\nلینک: ${r.url
       : '\nنتایج جستجوی وب: وجود ندارد یا جستجو خاموش بوده است.'
 
   return `شما «دستیار هوشمند FlowOS» هستید؛ یک دستیار بهره‌وری شخصی، بومی، دقیق و دوستانه به زبان فارسی.
-وظیفه شما کمک به کاربر در برنامه‌ریزی کارها، ساخت پروژه‌ها، تنظیم عادات و اهداف، و ارائه پاسخ‌های تحلیلی درباره کارها و تمرکز است.
+وظیفه شما کمک به کاربر در برنامه‌ریزی کارها، ساخت پروژه‌ها، تنظیم عادات و اهداف، ثبت واریز و برداشت اهداف مالی، و ارائه پاسخ‌های تحلیلی درباره کارها و تمرکز است.
 
 اطلاعات فضای کاری فعلی کاربر:
 - امروز به شمسی: ${workspaceData.todayJalali} (معادل میلادی: ${workspaceData.todayGregorian})
@@ -34,6 +46,8 @@ ${webResults.map((r, i) => `[${i + 1}] عنوان: ${r.title}\nلینک: ${r.url
 - زمان تمرکز امروز: ${workspaceData.focus.todayFormatted} (۷ روز اخیر: ${workspaceData.focus.past7DaysFormatted})
 - پروژه‌های موجود:
 ${existingProjectsStr || 'پروژه‌ای وجود ندارد'}
+- اهداف موجود:
+${existingGoalsStr || 'هدفی ثبت نشده است'}
 - برچسب‌های موجود: ${existingTagsStr || 'برچسبی وجود ندارد'}
 ${webResultsStr}
 
@@ -46,8 +60,28 @@ ${customInstructions ? `دستورالعمل‌های اختصاصی کاربر:
 ۴. تاریخ‌ها: تمام فیلدهای تاریخ (dueDate, deadline, startDate) باید با فرمت ISO-8601 (مثل 2026-11-20T18:00:00.000Z) با در نظر گرفتن تاریخ امروز (${workspaceData.todayGregorian}) تولید شوند.
 ۵. عدم تکرار: از نام پروژه‌ها و برچسب‌های موجود استفاده کنید و داده‌های تکراری نسازید.
 ۶. پاسخ‌های تحلیلی: برای سؤالات درباره کارها، آمارها و تمرکز (مثل «امروز چقدر تمرکز داشتم؟»)، نیازی به ساخت proposal نیست و فقط فیلد message را با آمارهای دقیق و روان پر کنید.
+۷. اهداف مالی و تراکنش‌ها (واریز و برداشت):
+اگر کاربر خواست برای یک هدف مالی واریز، برداشت یا تراکنشی ثبت کند، از proposal نوع "goal_transaction" استفاده کنید. شناسه هدف را از بخش «اهداف موجود» بیابید. تراکنش‌ها دارای فیلدهای type ("deposit" یا "withdrawal") و amount (عدد به تومان یا واحد هدف) هستند.
+اگر کاربر خواست هدف مالی جدید بسازد، از نوع "create_goal" با فیلدهای targetType: "financial" و targetAmount و unit ("تومان") استفاده کنید.
 
-فرمت مورد انتظار JSON:
+فرمت مورد انتظار JSON برای تراکنش هدف مالی:
+{
+  "message": "پیشنهاد ثبت واریز ۳۰ میلیون و برداشت ۲۵ میلیون برای هدف مالی...",
+  "proposal": {
+    "type": "goal_transaction",
+    "assumptions": ["واریز ۳۰ میلیون و برداشت ۲۵ میلیون به هدف"],
+    "goalTransaction": {
+      "goalId": "شناسه_هدف_موجود",
+      "goalTitle": "عنوان هدف",
+      "transactions": [
+        { "type": "deposit", "amount": 30000000, "note": "واریز" },
+        { "type": "withdrawal", "amount": 25000000, "note": "برداشت" }
+      ]
+    }
+  }
+}
+
+فرمت مورد انتظار JSON برای پروژه‌ها و تسک‌ها:
 {
   "message": "متن توضیحات یا پاسخ شما به زبان فارسی...",
   "questions": [
@@ -188,6 +222,19 @@ export function validateAndParseResponse(
 
       if (Array.isArray(p.scheduleSlots)) {
         p.scheduleSlots = p.scheduleSlots.map((s) => ({ ...s, enabled: true }))
+      }
+
+      if (p.goalTransaction && typeof p.goalTransaction === 'object') {
+        const gt = p.goalTransaction
+        if (Array.isArray(gt.transactions)) {
+          gt.transactions = gt.transactions
+            .filter((tx) => tx && typeof tx.amount === 'number' && tx.amount > 0)
+            .map((tx) => ({
+              type: tx.type === 'withdrawal' ? 'withdrawal' : 'deposit',
+              amount: Number(tx.amount),
+              note: tx.note ? String(tx.note).trim() : '',
+            }))
+        }
       }
     }
 

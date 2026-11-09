@@ -133,6 +133,12 @@ export async function executeProposal(
         description: proposal.goal.description || '',
         priority: proposal.goal.priority || 'high',
         deadline: proposal.goal.deadline || null,
+        targetType: proposal.goal.targetType || 'standard',
+        targetAmount: proposal.goal.targetAmount ?? null,
+        currentAmount: proposal.goal.currentAmount ?? 0,
+        unit: proposal.goal.unit || 'تومان',
+        linkedHabitIds: proposal.goal.linkedHabitIds || [],
+        linkedProjectIds: proposal.goal.linkedProjectIds || [],
         milestones: Array.isArray(proposal.goal.milestones)
           ? proposal.goal.milestones.map((m, idx) => ({
               id: newId(),
@@ -149,6 +155,46 @@ export async function executeProposal(
         success: true,
         undoLog,
         message: `هدف «${proposal.goal.title}» با موفقیت ایجاد شد.`,
+      }
+    }
+
+    case 'goal_transaction': {
+      const gt = proposal.goalTransaction
+      if (!gt?.goalId) {
+        throw new Error('شناسه هدف مشخص نشده است.')
+      }
+      const goal = await db.goals.get(gt.goalId)
+      if (!goal) {
+        throw new Error('هدف مورد نظر یافت نشد.')
+      }
+
+      // Record rollback state
+      undoLog.updatedItems.push({
+        entityType: 'goal',
+        id: goal.id,
+        previousValues: {
+          currentAmount: goal.currentAmount ?? 0,
+          financialTransactions: goal.financialTransactions ? [...goal.financialTransactions] : [],
+        },
+      })
+
+      const transactions = gt.transactions || []
+      let lastGoal = goal
+      for (const tx of transactions) {
+        const updated = await goalRepo.addTransaction(goal.id, {
+          type: tx.type,
+          amount: tx.amount,
+          note: tx.note,
+        })
+        if (updated) lastGoal = updated
+      }
+
+      const netAmount = (lastGoal.currentAmount ?? 0).toLocaleString()
+      const unit = lastGoal.unit || 'تومان'
+      return {
+        success: true,
+        undoLog,
+        message: `${transactions.length} تراکنش در هدف «${goal.title}» ثبت شد. موجودی جدید: ${netAmount} ${unit}`,
       }
     }
 

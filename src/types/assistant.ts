@@ -46,8 +46,21 @@ export interface AssistantProposalTask {
   enabled?: boolean
 }
 
+export interface GoalTransactionProposalItem {
+  type: 'deposit' | 'withdrawal'
+  amount: number
+  note?: string
+}
+
 export interface AssistantProposal {
-  type: 'create_project_tasks' | 'create_habits' | 'create_goal' | 'bulk_edit' | 'bulk_delete' | 'schedule_planner'
+  type:
+    | 'create_project_tasks'
+    | 'create_habits'
+    | 'create_goal'
+    | 'bulk_edit'
+    | 'bulk_delete'
+    | 'schedule_planner'
+    | 'goal_transaction'
   assumptions: string[]
   project?: {
     name: string
@@ -73,6 +86,17 @@ export interface AssistantProposal {
     deadline?: ISODateTime | null
     milestones?: string[]
     priority: Priority
+    targetType?: 'standard' | 'financial' | 'metric' | 'habit'
+    targetAmount?: number | null
+    currentAmount?: number | null
+    unit?: string
+    linkedHabitIds?: ID[]
+    linkedProjectIds?: ID[]
+  }
+  goalTransaction?: {
+    goalId: ID
+    goalTitle?: string
+    transactions: GoalTransactionProposalItem[]
   }
   edits?: Array<{
     entityType: 'task' | 'project'

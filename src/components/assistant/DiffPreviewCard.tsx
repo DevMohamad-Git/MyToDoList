@@ -1,6 +1,8 @@
 import {
   AlertTriangle,
+  ArrowDownLeft,
   ArrowRight,
+  ArrowUpRight,
   Calendar,
   Check,
   RotateCcw,
@@ -8,6 +10,7 @@ import {
   Target,
   Trash2,
   Undo2,
+  Wallet,
   X,
 } from 'lucide-react'
 import { Badge, Button, Card, CardBody } from '@/components/ui'
@@ -40,6 +43,7 @@ export function DiffPreviewCard({
   const isSchedule = proposal.type === 'schedule_planner'
   const isHabit = proposal.type === 'create_habits'
   const isGoal = proposal.type === 'create_goal'
+  const isGoalTransaction = proposal.type === 'goal_transaction'
 
   return (
     <Card
@@ -167,6 +171,54 @@ export function DiffPreviewCard({
                   <div className="text-muted-foreground">{currentProposal.goal.description}</div>
                 ) : null}
               </div>
+            </div>
+          </div>
+        ) : null}
+
+        {isGoalTransaction && currentProposal.goalTransaction ? (
+          <div className="space-y-2 text-xs">
+            <div className="flex items-center gap-2 rounded-md bg-muted/40 p-2.5">
+              <Wallet className="size-4 text-accent" />
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] text-muted-foreground">تراکنش‌های هدف مالی:</span>
+                <div className="font-semibold text-foreground">
+                  {currentProposal.goalTransaction.goalTitle || 'هدف مالی'}
+                </div>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              {currentProposal.goalTransaction.transactions.map((tx, idx) => (
+                <div
+                  key={idx}
+                  className={cn(
+                    'flex items-center justify-between rounded-md border p-2',
+                    tx.type === 'deposit'
+                      ? 'border-emerald-500/20 bg-emerald-500/5'
+                      : 'border-rose-500/20 bg-rose-500/5',
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    {tx.type === 'deposit' ? (
+                      <ArrowDownLeft className="size-3.5 text-emerald-500" />
+                    ) : (
+                      <ArrowUpRight className="size-3.5 text-rose-500" />
+                    )}
+                    <span className="font-medium text-foreground">
+                      {tx.type === 'deposit' ? 'واریز' : 'برداشت'}
+                      {tx.note ? ` (${tx.note})` : ''}
+                    </span>
+                  </div>
+                  <span
+                    className={cn(
+                      'font-mono font-semibold tabular-nums',
+                      tx.type === 'deposit' ? 'text-emerald-500' : 'text-rose-500',
+                    )}
+                  >
+                    {tx.type === 'deposit' ? '+' : '-'}
+                    {tx.amount.toLocaleString()} تومان
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         ) : null}

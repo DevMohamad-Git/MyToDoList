@@ -47,7 +47,12 @@ export function TaskRow({
   onSchedule,
   onSelectChange,
   extra,
+  leading,
+  trailing,
   className,
+  draggable,
+  onDragStart,
+  onDragEnd,
 }: {
   task: Task
   project?: Project | null
@@ -65,7 +70,12 @@ export function TaskRow({
   onSchedule?: (task: Task) => void
   onSelectChange?: (task: Task, selected: boolean) => void
   extra?: ReactNode
+  leading?: ReactNode
+  trailing?: ReactNode
   className?: string
+  draggable?: boolean
+  onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void
+  onDragEnd?: (e: React.DragEvent<HTMLDivElement>) => void
 }) {
   const t = useT()
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
@@ -74,6 +84,9 @@ export function TaskRow({
 
   return (
     <div
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
       onContextMenu={(e) => {
         e.preventDefault()
         setContextMenu({ x: e.clientX, y: e.clientY })
@@ -87,6 +100,7 @@ export function TaskRow({
     >
       {/* Right side: Checkbox, complete circle, priority dot, title, description icon, AND all metadata badges */}
       <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
+        {leading}
         {onSelectChange ? (
           <input
             type="checkbox"
@@ -241,8 +255,9 @@ export function TaskRow({
         {extra}
       </div>
 
-      {/* Left side: Hover Quick Actions (Play, Edit, Trash) */}
-      <div className="flex items-center gap-1 shrink-0 ps-6 sm:ps-0">
+      {/* Left side: Hover Quick Actions (Play, Edit, Trash) and Trailing content */}
+      <div className="flex items-center gap-1.5 shrink-0 ps-6 sm:ps-0">
+        {trailing}
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           {onStartFocus ? (
             <button
